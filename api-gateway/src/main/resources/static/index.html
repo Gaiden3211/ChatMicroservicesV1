@@ -1,0 +1,2590 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Discord Clone</title>
+    <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet"><style>
+        :root {
+            --bg-dark: #202225;
+            --bg-secondary: #2f3136;
+            --bg-tertiary: #36393f;
+            --bg-chat: #36393f;
+            --channel-hover: #393c43;
+            --active: #42464D;
+            --text-normal: #dcddde;
+            --text-muted: #72767d;
+            --accent: #5865f2;
+            --accent-hover: #4752c4;
+            --server-rail: #202225;
+        }
+        body { margin: 0; padding: 0; font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: var(--bg-dark); color: var(--text-normal); height: 100vh; overflow: hidden; display: flex; }
+
+        /* --- Auth Styles --- */
+        #login-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-image: url('https://discord.com/assets/f9e7949365287f717887.png'); background-size: cover; display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .auth-container { background: var(--bg-secondary); padding: 32px; border-radius: 5px; box-shadow: 0 2px 10px 0 rgba(0,0,0,.2); width: 480px; text-align: center; }
+        .input-group { text-align: left; margin-bottom: 15px; }
+        .input-group label { display: block; color: #b9bbbe; font-size: 12px; font-weight: bold; margin-bottom: 8px; }
+        .input-group input { width: 100%; padding: 10px; background: var(--bg-dark); border: 1px solid #202225; color: white; border-radius: 3px; box-sizing: border-box; }
+        .auth-btn { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        .google-btn { background: white; color: black; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 15px; }
+        .toggle-link { color: var(--accent); cursor: pointer; font-size: 14px; margin-top: 20px; display: block; }
+        .hidden { display: none !important; }
+        /* --- Layout --- */
+        #app-container { display: none; width: 100%; height: 100%; display: flex; }
+
+        /* 1. Server Rail (Left) */
+        .guild-nav { width: 72px; background-color: var(--server-rail); display: flex; flex-direction: column; align-items: center; padding-top: 12px; overflow-y: auto; }
+        .guild-icon {
+            width: 48px; height: 48px; background-color: var(--bg-tertiary); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; margin-bottom: 8px;
+            cursor: pointer; transition: all 0.2s; color: var(--text-normal); font-weight: bold;
+            position: relative; background-size: cover; background-position: center;
+        }
+        .guild-icon:hover, .guild-icon.active { background-color: var(--accent); border-radius: 16px; color: white; }
+        .guild-separator { width: 32px; height: 2px; background-color: var(--bg-secondary); margin: 8px 0; }
+        .home-icon { background-color: #36393f; }
+
+        /* 2. Sidebar (Middle) */
+        .sidebar { width: 240px; background-color: var(--bg-secondary); display: flex; flex-direction: column; }
+        .sidebar-header { padding: 0 16px; height: 48px; border-bottom: 1px solid #202225; font-weight: bold; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 0 rgba(4,4,5,0.2); }
+        .list-content { flex: 1; overflow-y: auto; padding: 10px 8px; }
+
+        .nav-item { display: flex; align-items: center; padding: 8px; border-radius: 4px; cursor: pointer; color: var(--text-muted); margin-bottom: 2px; }
+        .nav-item:hover { background-color: var(--channel-hover); color: var(--text-normal); }
+        .nav-item.active { background-color: var(--active); color: white; }
+        .nav-item-avatar { width: 32px; height: 32px; background-color: var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 10px; color: white; font-weight: bold; font-size: 12px; text-transform: uppercase; }
+
+        /* 3. Chat Area (Right) */
+        .chat-area { flex: 1; background-color: var(--bg-chat); display: flex; flex-direction: column; min-width: 0; }
+        .chat-header { padding: 0 16px; height: 48px; border-bottom: 1px solid #26272d; font-weight: bold; color: white; display: flex; align-items: center; box-shadow: 0 1px 0 rgba(4,4,5,0.2); }
+        .messages-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+        .message { display: flex; gap: 15px; margin-bottom: 5px; }
+        .message:hover { background-color: rgba(4,4,5,0.07); }
+
+        .input-area { padding: 20px; }
+        .input-wrapper { background-color: #40444b; border-radius: 8px; padding: 0 16px; display: flex; align-items: center; }
+        .input-wrapper input { width: 100%; background: transparent; border: none; padding: 12px 0; color: white; font-size: 15px; outline: none; }
+
+        .user-footer { padding: 10px; background: #292b2f; display: flex; align-items: center; }
+        ::-webkit-scrollbar { width: 8px; background-color: #2e3338; }
+        ::-webkit-scrollbar-thumb { background-color: #202225; border-radius: 4px; }
+        /* Кнопка завантаження */
+        .upload-btn {
+            padding: 10px;
+            color: #b9bbbe;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .upload-btn:hover { color: #dcddde; }
+
+        /* Відображення фото у повідомленнях */
+        .message-text {
+            color: #dcddde;
+            line-height: 1.375rem;
+            word-wrap: break-word;
+            user-select: text;
+        }
+
+        .image-attachment {
+            margin-top: 8px;
+            position: relative;
+            display: inline-block;
+        }
+
+        .message-image {
+            max-width: 100%;
+            max-height: 350px;
+            border-radius: 4px;
+            object-fit: contain;
+            cursor: zoom-in;
+        }
+
+        /* Зона попереднього перегляду файлів */
+        .attachment-preview {
+            display: flex;
+            gap: 10px;
+            padding: 10px 16px;
+            background-color: #2f3136;
+            border-bottom: 1px solid #202225;
+            overflow-x: auto;
+            display: none; /* Ховаємо, коли пуста */
+        }
+
+        .preview-item {
+            position: relative;
+            width: 60px;
+            height: 60px;
+            background-color: #202225;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .preview-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+
+        .preview-file-icon {
+            font-size: 24px;
+            color: #b9bbbe;
+        }
+
+        .remove-btn {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ed4245;
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border: 2px solid #2f3136;
+        }
+
+        /* Змінюємо input-area, щоб вмістити прев'ю */
+        .input-area {
+            padding: 0;
+            background-color: #40444b;
+            margin: 20px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-wrapper {
+            background-color: transparent;
+            padding: 0 16px;
+        }
+
+        /* --- НОВІ СТИЛІ --- */
+
+        /* Кнопки в інпуті */
+        .attach-btn {
+            color: #b9bbbe;
+            cursor: pointer;
+            padding: 10px;
+            background: none;
+            border: none;
+            font-size: 16px;
+            transition: color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .attach-btn:hover { color: #dcddde; }
+
+        /* Анімація запису */
+        .recording { color: #ed4245 !important; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        /* Аудіо плеєр */
+        audio {
+            height: 40px;
+            width: 300px;
+            border-radius: 20px;
+            outline: none;
+        }
+        /* Фікс для Chrome, щоб плеєр був світлим */
+        audio::-webkit-media-controls-panel {
+            background-color: #f1f3f4;
+        }
+
+        /* Прев'ю файлів */
+        .attachment-preview {
+            display: flex;
+            gap: 10px;
+            padding: 10px 16px;
+            background-color: #2f3136;
+            border-bottom: 1px solid #202225;
+            border-radius: 8px 8px 0 0;
+            overflow-x: auto;
+            display: none; /* Сховано за замовчуванням */
+        }
+
+        /* Змінюємо input-area, щоб все влізло */
+        .input-area {
+            padding: 0;
+            background-color: #40444b;
+            margin: 20px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+        }
+        .input-wrapper {
+            background-color: transparent;
+            padding: 0 16px;
+            display: flex; /* Важливо для вирівнювання кнопок */
+            align-items: center;
+        }
+        .input-wrapper input { flex: 1; } /* Інпут займає всю вільну ширину */
+
+        /* --- PROFILE MODAL STYLES --- */
+        .profile-header {
+            background-color: #202225;
+            height: 100px;
+            position: relative;
+            border-radius: 8px 8px 0 0;
+        }
+        .profile-avatar-upload {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            border: 6px solid #36393f;
+            position: absolute;
+            bottom: -50px;
+            left: 20px;
+            background-color: #2f3136;
+            background-size: cover;
+            background-position: center;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .profile-avatar-upload:hover::after {
+            content: "CHANGE";
+            color: white;
+            font-size: 10px;
+            font-weight: bold;
+            background: rgba(0,0,0,0.5);
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .profile-body {
+            padding: 60px 20px 20px 20px;
+        }
+        .settings-input {
+            width: 100%;
+            background-color: #202225;
+            border: 1px solid #202225;
+            padding: 10px;
+            border-radius: 4px;
+            color: white;
+            margin-top: 5px;
+            margin-bottom: 15px;
+            box-sizing: border-box;
+        }
+        .settings-label {
+            color: #b9bbbe;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        /* --- AI ASSISTANT STYLES --- */
+        .ai-menu {
+            position: absolute;
+            bottom: 70px; /* З'являється над інпутом */
+            right: 20px;
+            background: #2f3136;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            width: 250px;
+            z-index: 100;
+            overflow: hidden;
+            border: 1px solid #202225;
+        }
+        .ai-menu-header {
+            padding: 10px;
+            background: #202225;
+            color: #b9bbbe;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .ai-menu-item {
+            width: 100%;
+            text-align: left;
+            padding: 10px 15px;
+            background: none;
+            border: none;
+            color: #dcddde;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .ai-menu-item:hover { background: #393c43; color: white; }
+        .ai-prompt-container { padding: 10px; border-top: 1px solid #202225; }
+        .ai-prompt-input {
+            width: 100%;
+            background: #202225;
+            border: none;
+            color: white;
+            padding: 8px;
+            border-radius: 4px;
+            box-sizing: border-box;
+            outline: none;
+        }
+
+    </style>
+</head>
+<body>
+
+<div id="login-screen">
+    <div class="auth-container" id="login-form">
+        <h2 style="color:white">Welcome Back!</h2>
+        <div class="input-group"><label>Username</label><input type="text" id="login-username"></div>
+        <div class="input-group"><label>Password</label><input type="password" id="login-password"></div>
+        <button class="auth-btn" onclick="performLogin()">Log In</button>
+        <button class="auth-btn google-btn" onclick="performGoogleLogin()">Sign in with Google</button>
+        <span class="toggle-link" onclick="toggleForms()">Need an account? Register</span>
+    </div>
+    <div class="auth-container hidden" id="register-form">
+        <h2 style="color:white">Create Account</h2>
+        <div class="input-group"><label>Username</label><input type="text" id="reg-username"></div>
+        <div class="input-group"><label>Email</label><input type="email" id="reg-email"></div>
+        <div class="input-group"><label>Password</label><input type="password" id="reg-password"></div>
+        <button class="auth-btn" onclick="performRegister()">Continue</button>
+        <span class="toggle-link" onclick="toggleForms()">Back to Login</span>
+    </div>
+</div>
+
+<div id="app-container" class="hidden">
+    <div class="guild-nav" id="guildList">
+        <div class="guild-icon home-icon active" id="home-button" onclick="switchToHome()" title="Home">
+            <i class="fab fa-discord" style="font-size: 28px;"></i>
+        </div>
+        <div class="guild-separator"></div>
+        <div class="guild-icon" onclick="createNewGuild()" style="color: #3ba55c; background-color: var(--bg-secondary);" title="Add Server">
+            <i class="fas fa-plus"></i>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <div class="sidebar-header" id="sidebarHeader">
+            <span>Direct Messages</span>
+            <div style="display:flex; gap:10px;">
+                <button onclick="openInvitesModal()" style="background:none; border:none; color:white; cursor:pointer;" title="Invites">
+                    <i class="fas fa-envelope"></i>
+                </button>
+                <button onclick="startNewChat()" style="background:none; border:none; color:white; cursor:pointer;">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+        </div>
+        <div class="list-content" id="navList"></div>
+
+        <div class="user-footer">
+            <div class="nav-item-avatar" id="my-avatar" onclick="openProfileModal()" style="cursor: pointer;">ME</div>
+            <div style="margin-left: 10px; cursor: pointer;" onclick="openProfileModal()">
+                <div style="color: white; font-weight: bold; font-size: 14px;" id="my-username">...</div>
+                <div style="color: #b9bbbe; font-size: 12px;">Online</div>
+            </div>
+            <button onclick="logout()" style="margin-left: auto; background: none; border: none; color: #ed4245; cursor: pointer;"><i class="fas fa-sign-out-alt"></i></button>
+        </div>
+    </div>
+
+    <div class="chat-area">
+        <div class="chat-header">
+            <i id="chatHeaderIcon" class="fas fa-at" style="margin-right: 10px; color: #72767d;"></i>
+            <span id="chatTitle">Select a conversation</span>
+            <button id="callBtn" onclick="startCall()" style="margin-left:auto; background:none; border:none; color:#dcddde; cursor:pointer; font-size:18px; display:none;">
+                <i class="fas fa-video"></i>
+            </button>
+        </div>
+        <div class="messages-container" id="messagesContainer"></div>
+        <div class="input-area" style="position: relative;"> <div id="attachmentPreview" class="attachment-preview"></div>
+
+            <div id="aiMenu" class="ai-menu hidden">
+                <div class="ai-menu-header">AI Assistant 🪄</div>
+
+                <button class="ai-menu-item" onclick="processAiText('FIX_ERRORS')">
+                    <i class="fas fa-spell-check"></i> Fix Grammar
+                </button>
+
+                <div class="ai-prompt-container" style="display: flex; gap: 5px;">
+                    <input type="text" id="aiStyleInput" class="ai-prompt-input" placeholder="Style (e.g. Pirate, Formal)" style="flex: 1;">
+                    <button class="attach-btn" style="padding: 5px;" onclick="processAiText('CHANGE_STYLE')" title="Apply Style">
+                        <i class="fas fa-arrow-right"></i>
+                    </button>
+                </div>
+
+                <div class="ai-prompt-container" style="display: flex; gap: 5px;">
+                    <input type="text" id="aiLangInput" class="ai-prompt-input" placeholder="Language (e.g. French)" style="flex: 1;">
+                    <button class="attach-btn" style="padding: 5px;" onclick="processAiText('TRANSLATE')" title="Translate">
+                        <i class="fas fa-language"></i>
+                    </button>
+                </div>
+
+                <div class="ai-prompt-container">
+                    <input type="text" id="aiPrompt" class="ai-prompt-input" placeholder="Ask AI to generate..." onkeypress="if(event.key === 'Enter') processAiText('GENERATE_NEW')">
+                </div>
+            </div>
+
+            <div class="input-wrapper">
+                <input type="file" id="fileInput" class="hidden" multiple onchange="handleFileSelect(this)">
+
+                <button class="attach-btn" onclick="document.getElementById('fileInput').click()" title="Upload File">
+                    <i class="fas fa-plus-circle"></i>
+                </button>
+
+                <button class="attach-btn" onclick="toggleAiMenu()" title="AI Assistant">
+                    <i class="fas fa-magic" style="color: #faa61a;"></i>
+                </button>
+
+                <input type="text" id="messageInput" placeholder="Message..." disabled onkeypress="handleEnter(event)">
+
+                <button id="recordBtn" class="attach-btn" onclick="toggleRecording()" title="Click to Record">
+                    <i class="fas fa-microphone"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<div id="callModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:2000; flex-direction:column; align-items:center; justify-content:center;">
+
+    <div style="position:relative; width:800px; height:500px; background:#1e1e1e; border-radius:8px; overflow:hidden; box-shadow: 0 0 20px rgba(0,0,0,0.5);">
+
+        <video id="remoteVideo" autoplay playsinline style="width:100%; height:100%; object-fit:contain; background:#000;"></video>
+
+        <video id="localVideo" autoplay playsinline muted style="position:absolute; bottom:20px; right:20px; width:160px; height:120px; background:#333; border-radius:8px; object-fit:cover; border: 2px solid #202225; z-index: 10;"></video>
+
+        <div style="position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:15px; background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 30px; z-index: 10;">
+
+            <button id="btnToggleMic" onclick="toggleMic()" style="background:#36393f; color:white; border:none; width:50px; height:50px; border-radius:50%; cursor:pointer; font-size: 20px; display:flex; align-items:center; justify-content:center;">
+                <i class="fas fa-microphone"></i>
+            </button>
+
+            <button id="btnToggleCam" onclick="toggleCam()" style="background:#36393f; color:white; border:none; width:50px; height:50px; border-radius:50%; cursor:pointer; font-size: 20px; display:flex; align-items:center; justify-content:center;">
+                <i class="fas fa-video"></i>
+            </button>
+
+            <button onclick="hangUp()" style="background:#ed4245; color:white; border:none; width:50px; height:50px; border-radius:50%; cursor:pointer; font-size: 20px; display:flex; align-items:center; justify-content:center;">
+                <i class="fas fa-phone-slash"></i>
+            </button>
+        </div>
+
+        <div id="callStatus" style="position:absolute; top:20px; left:20px; color:white; background:rgba(0,0,0,0.5); padding:5px 10px; border-radius:4px;">Connecting...</div>
+    </div>
+</div>
+
+<div id="incomingCallModal" style="display:none; position:fixed; bottom:20px; right:20px; background:#2f3136; padding:20px; border-radius:8px; box-shadow:0 0 10px rgba(0,0,0,0.5); z-index:2001; flex-direction:column; gap:10px; width:250px;">
+    <div style="color:white; font-weight:bold; text-align:center;">Incoming Call...</div>
+    <div id="callerName" style="color:#b9bbbe; text-align:center; font-size:14px;">User</div>
+    <div style="display:flex; gap:10px; justify-content:center; margin-top:10px;">
+        <button onclick="acceptCall()" style="background:#3ba55c; color:white; border:none; padding:10px 20px; border-radius:4px; cursor:pointer;">Accept</button>
+        <button onclick="rejectCall()" style="background:#ed4245; color:white; border:none; padding:10px 20px; border-radius:4px; cursor:pointer;">Decline</button>
+    </div>
+</div>
+
+<div id="invitesModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:3000; align-items:center; justify-content:center;">
+    <div style="width:500px; background:#36393f; border-radius:8px; padding:20px; box-shadow: 0 2px 10px rgba(0,0,0,.5);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <h3 style="color:white; margin:0;">Pending Invites</h3>
+            <button onclick="document.getElementById('invitesModal').style.display='none'" style="background:none; border:none; color:#b9bbbe; cursor:pointer; font-size:18px;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <div id="invitesList" style="max-height:400px; overflow-y:auto; display:flex; flex-direction:column; gap:10px;">
+            <div style="color:#72767d; text-align:center; padding:20px;">Loading...</div>
+        </div>
+    </div>
+</div>
+<div id="profileModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:3000; align-items:center; justify-content:center;">
+    <div style="width:400px; background:#36393f; border-radius:8px; box-shadow: 0 2px 10px rgba(0,0,0,.5);">
+
+        <div class="profile-header">
+            <div id="profileAvatarPreview" class="profile-avatar-upload" onclick="document.getElementById('avatarUploadInput').click()">
+                <i class="fas fa-camera" style="color: #b9bbbe; font-size: 24px; display: none;" id="defaultAvatarIcon"></i>
+            </div>
+            <input type="file" id="avatarUploadInput" hidden accept="image/*" onchange="previewAvatar(this)">
+        </div>
+
+        <div class="profile-body">
+            <h2 style="color:white; margin:0 0 20px 0;">Edit Profile</h2>
+
+            <div class="settings-label">Username</div>
+            <input type="text" id="editUsername" class="settings-input">
+
+            <div class="settings-label">Email</div>
+            <input type="email" id="editEmail" class="settings-input">
+
+            <div style="margin-top: 20px; border-top: 1px solid #4f545c; padding-top: 15px;">
+                <div class="settings-label" style="color: #ed4245;">Danger Zone</div>
+                <button onclick="resetMyKeys()" style="width: 100%; background-color: transparent; border: 1px solid #ed4245; color: #ed4245; padding: 10px; border-radius: 4px; cursor: pointer; margin-top: 5px;">
+                    <i class="fas fa-key"></i> Force Regenerate Encryption Keys
+                </button>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:10px;">
+                <button onclick="document.getElementById('profileModal').style.display='none'" style="background:none; color:white; border:none; padding:10px 20px; cursor:pointer;">Cancel</button>
+                <button onclick="saveProfile()" style="background:#3ba55c; color:white; border:none; padding:10px 20px; border-radius:4px; cursor:pointer; font-weight:bold;">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+
+
+
+
+    // --- AI ASSISTANT LOGIC ---
+
+    function toggleAiMenu() {
+        document.getElementById('aiMenu').classList.toggle('hidden');
+    }
+
+    async function processAiText(action) { // <-- Прибрали аргументи targetLanguage та targetStyle
+        const messageInput = document.getElementById('messageInput');
+        const customPromptInput = document.getElementById('aiPrompt');
+        const styleInput = document.getElementById('aiStyleInput');
+        const langInput = document.getElementById('aiLangInput');
+
+        const originalText = messageInput.value.trim();
+        const customPrompt = customPromptInput.value.trim();
+
+        // Беремо значення з нових полів вводу
+        const targetStyle = styleInput.value.trim();
+        const targetLanguage = langInput.value.trim();
+
+        // Перевірки, щоб юзер не відправив пусті запити
+        if (action !== 'GENERATE_NEW' && !originalText) {
+            alert("Please type some text in the message box first!");
+            return;
+        }
+        if (action === 'CHANGE_STYLE' && !targetStyle) {
+            alert("Please enter a style!");
+            styleInput.focus();
+            return;
+        }
+        if (action === 'TRANSLATE' && !targetLanguage) {
+            alert("Please enter a language!");
+            langInput.focus();
+            return;
+        }
+
+        // Візуал: ховаємо
+
+            // Перевірки, щоб юзер не відправив пусті запити
+            if (action !== 'GENERATE_NEW' && !originalText) {
+                alert("Please type some text in the message box first!");
+                return;
+            }
+            if (action === 'CHANGE_STYLE' && !targetStyle) {
+                alert("Please enter a style!");
+                styleInput.focus();
+                return;
+            }
+            if (action === 'TRANSLATE' && !targetLanguage) {
+                alert("Please enter a language!");
+                langInput.focus();
+                return;
+            }
+
+            // Візуал: ховаємо
+
+
+
+        document.getElementById('aiMenu').classList.add('hidden');
+        const backupText = messageInput.value;
+        messageInput.value = "⏳ AI is processing...";
+        messageInput.disabled = true;
+
+        const endpoint = `${GATEWAY_URL}/api/v2/text/process`;
+
+        const requestDto = {
+            originalText: originalText,
+            action: action,
+            targetLanguage: targetLanguage,
+            targetStyle: targetStyle,
+            // 🔥 ЗМІНЕНО: GENERATE -> GENERATE_NEW
+            customPrompt: action === 'GENERATE_NEW' ? customPrompt : null
+        };
+
+        try {
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Authorization': currentToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestDto)
+            });
+
+            if (res.ok) {
+                const responseDto = await res.json();
+                // Замінюємо текст у полі вводу на оброблений
+                messageInput.value = responseDto.processedText;
+            } else {
+                const errorText = await res.text();
+                console.error("AI Service Error:", errorText);
+                alert("Failed to process text with AI.");
+                messageInput.value = backupText; // Повертаємо старий текст у разі помилки
+            }
+        } catch (e) {
+            console.error("Network error calling AI service:", e);
+            alert("Network error calling AI service.");
+            messageInput.value = backupText;
+        } finally {
+            messageInput.disabled = false;
+            customPromptInput.value = ""; // Очищаємо поле кастомного промпту
+            messageInput.focus();
+        }
+    }
+
+
+
+
+    async function resetMyKeys() {
+        if (!confirm("Це зробить старі повідомлення нечитабельними, але виправить помилки для нових. Продовжити?")) return;
+
+        try {
+            // 1. Генеруємо нові
+            const keyPair = await CryptoManager.generateKeyPair();
+            const pubPem = await CryptoManager.exportKey(keyPair.publicKey, "spki");
+            const privPem = await CryptoManager.exportKey(keyPair.privateKey, "pkcs8");
+
+            // 2. Зберігаємо в БД
+            const db = await new Promise((res, rej) => {
+                const req = indexedDB.open("SecureChatDB", 2);
+                req.onsuccess = e => res(e.target.result);
+                req.onerror = e => rej(e);
+            });
+
+            const tx = db.transaction("keys", "readwrite");
+            tx.objectStore("keys").put({
+                id: `key-pair-${myUserId}`,
+                publicKey: pubPem,
+                privateKey: privPem
+            });
+
+            await new Promise(r => tx.oncomplete = r);
+
+            // 3. Оновлюємо змінні в пам'яті
+            myPublicKey = pubPem;
+            myPrivateKey = keyPair.privateKey;
+
+            // 4. Відправляємо на сервер
+            await uploadPublicKey(pubPem);
+
+            alert("✅ Keys regenerated and uploaded! Now tell your friend to reload their page.");
+
+        } catch (e) {
+            console.error(e);
+            alert("Error resetting keys: " + e.message);
+        }
+    }
+
+    // --- UTILS: Надійне Base64 кодування ---
+    function arrayBufferToBase64(buffer) {
+        let binary = '';
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
+
+    function base64ToArrayBuffer(base64) {
+        const binary_string = window.atob(base64);
+        const len = binary_string.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binary_string.charCodeAt(i);
+        }
+        return bytes.buffer;
+    }
+
+
+
+    // Глобальна змінна для мого публічного ключа (додай це на початку скрипта разом з іншими let)
+    let myPublicKey = null;
+
+    const CryptoManager = {
+        // ... (функції generateKeyPair, exportKey, importKey залишаються без змін) ...
+        async generateKeyPair() {
+            return await window.crypto.subtle.generateKey(
+                { name: "RSA-OAEP", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
+                true, ["encrypt", "decrypt"]
+            );
+        },
+        async exportKey(key, type = "spki") {
+            const exported = await window.crypto.subtle.exportKey(type, key);
+            return arrayBufferToBase64(exported);
+        },
+        async importKey(base64, type = "spki", usage = ["encrypt"]) {
+            const binaryBuffer = base64ToArrayBuffer(base64);
+            return await window.crypto.subtle.importKey(type, binaryBuffer, { name: "RSA-OAEP", hash: "SHA-256" }, true, usage);
+        },
+
+        // 🔥 ОНОВЛЕНЕ ШИФРУВАННЯ
+        // Тепер приймає myPublicKeyPem (твій ключ)
+        async encryptMessage(text, recipientPublicKeyPem, myPublicKeyPem) {
+            try {
+                // 1. Генеруємо одноразовий AES ключ
+                const aesKey = await window.crypto.subtle.generateKey(
+                    { name: "AES-GCM", length: 256 },
+                    true, ["encrypt"]
+                );
+
+                // 2. Шифруємо текст (AES)
+                const iv = window.crypto.getRandomValues(new Uint8Array(12));
+                const encodedText = new TextEncoder().encode(text);
+                const encryptedContent = await window.crypto.subtle.encrypt(
+                    { name: "AES-GCM", iv: iv },
+                    aesKey,
+                    encodedText
+                );
+
+                // 3. Експортуємо AES ключ у байти
+                const rawAesKey = await window.crypto.subtle.exportKey("raw", aesKey);
+
+                // 4. Шифруємо AES ключ для ОТРИМУВАЧА
+                const recipientKey = await this.importKey(recipientPublicKeyPem, "spki", ["encrypt"]);
+                const keyForRecipient = await window.crypto.subtle.encrypt(
+                    { name: "RSA-OAEP" },
+                    recipientKey,
+                    rawAesKey
+                );
+
+                // 5. Шифруємо AES ключ для СЕБЕ (щоб потім прочитати історію)
+                const myKey = await this.importKey(myPublicKeyPem, "spki", ["encrypt"]);
+                const keyForMe = await window.crypto.subtle.encrypt(
+                    { name: "RSA-OAEP" },
+                    myKey,
+                    rawAesKey
+                );
+
+                // 6. Формуємо новий JSON
+                return JSON.stringify({
+                    iv: arrayBufferToBase64(iv),
+                    content: arrayBufferToBase64(encryptedContent),
+                    keys: {
+                        recipient: arrayBufferToBase64(keyForRecipient),
+                        sender: arrayBufferToBase64(keyForMe)
+                    }
+                });
+            } catch (e) {
+                console.error("Encryption failed:", e);
+                return null;
+            }
+        },
+
+        // 🔥 ОНОВЛЕНЕ ДЕШИФРУВАННЯ
+        // Тепер вміє вибирати правильний ключ
+        async decryptMessage(encryptedJson, myPrivateKey, isMyMessage) {
+            try {
+                const data = JSON.parse(encryptedJson);
+
+                // Перевірка на старий формат (якщо раптом є старі повідомлення)
+                if (data.key && !data.keys) {
+                    // Стара логіка для зворотної сумісності
+                    data.keys = { recipient: data.key };
+                }
+
+                if (!data.iv || !data.keys || !data.content) return encryptedJson;
+
+                // 1. Вибираємо, який зашифрований AES ключ брати
+                let targetEncryptedKeyBase64;
+
+                if (isMyMessage) {
+                    // Якщо це я відправив - беру ключ, зашифрований для мене (sender)
+                    targetEncryptedKeyBase64 = data.keys.sender;
+                } else {
+                    // Якщо мені прислали - беру ключ, зашифрований для отримувача (recipient)
+                    targetEncryptedKeyBase64 = data.keys.recipient;
+                }
+
+                if (!targetEncryptedKeyBase64) return "🔒 Cannot decrypt (Key missing)";
+
+                // 2. Дешифруємо AES ключ
+                const encryptedAesKey = base64ToArrayBuffer(targetEncryptedKeyBase64);
+                const rawAesKey = await window.crypto.subtle.decrypt(
+                    { name: "RSA-OAEP" },
+                    myPrivateKey,
+                    encryptedAesKey
+                );
+
+                // 3. Відновлюємо AES ключ
+                const aesKey = await window.crypto.subtle.importKey(
+                    "raw",
+                    rawAesKey,
+                    "AES-GCM",
+                    true, ["decrypt"]
+                );
+
+                // 4. Дешифруємо контент
+                const iv = base64ToArrayBuffer(data.iv);
+                const encryptedContent = base64ToArrayBuffer(data.content);
+                const decryptedBuffer = await window.crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: iv },
+                    aesKey,
+                    encryptedContent
+                );
+
+                return new TextDecoder().decode(decryptedBuffer);
+            } catch (e) {
+                console.warn("Decryption error:", e);
+                return "🔒 Error decrypting";
+            }
+        }
+    };
+
+
+
+    // Глобальна змінна
+    let myPrivateKey = null;
+
+    function initCrypto() {
+        return new Promise((resolve, reject) => {
+            if (!myUserId) {
+                reject("No userId found for crypto init");
+                return;
+            }
+
+            const request = indexedDB.open("SecureChatDB", 3);
+
+            request.onupgradeneeded = function(e) {
+                const db = e.target.result;
+
+                // Таблиця для ключів (вже була)
+                if (!db.objectStoreNames.contains("keys")) {
+                    db.createObjectStore("keys", { keyPath: "id" });
+                }
+
+                // 🔥 ТАБЛИЦЯ ДЛЯ ПОВІДОМЛЕНЬ
+                if (!db.objectStoreNames.contains("messages")) {
+                    // keyPath: 'id' означає, що ми використовуємо ID повідомлення з сервера як унікальний ключ
+                    // Це автоматично прибере дублікати!
+                    const msgStore = db.createObjectStore("messages", { keyPath: "id" });
+
+                    // Створюємо індекс 'chatId', щоб шукати повідомлення по кімнаті (dm-1006 або guild-1-chan-2)
+                    msgStore.createIndex("chatId", "chatId", { unique: false });
+
+                    // Індекс по часу, щоб сортувати
+                    msgStore.createIndex("timestamp", "timestamp", { unique: false });
+                }
+            };
+
+            request.onsuccess = async function(e) {
+                const db = e.target.result;
+
+                // Використовуємо унікальний ID для ключів цього юзера
+                const storageKeyId = `key-pair-${myUserId}`;
+
+                try {
+                    // КРОК 1: Шукаємо ключі саме цього юзера
+                    const existingKeyPair = await new Promise((resTx, rejTx) => {
+                        const tx = db.transaction("keys", "readonly");
+                        const store = tx.objectStore("keys");
+                        const getReq = store.get(storageKeyId);
+                        getReq.onsuccess = () => resTx(getReq.result);
+                        getReq.onerror = () => rejTx(getReq.error);
+                    });
+
+                    if (existingKeyPair) {
+                        console.log(`🔐 Crypto: Keys found for user ${myUserId}.`);
+                        const privKeyPem = existingKeyPair.privateKey;
+                        myPrivateKey = await CryptoManager.importKey(privKeyPem, "pkcs8", ["decrypt"]);
+
+                        myPublicKey = existingKeyPair.publicKey;
+
+                        // Завжди оновлюємо публічний ключ на сервері при вході
+                        await uploadPublicKey(existingKeyPair.publicKey);
+                    } else {
+                        console.log(`🆕 Crypto: Generating NEW keys for user ${myUserId}...`);
+
+                        const keyPair = await CryptoManager.generateKeyPair();
+                        myPrivateKey = keyPair.privateKey;
+
+                        const pubPem = await CryptoManager.exportKey(keyPair.publicKey, "spki");
+                        const privPem = await CryptoManager.exportKey(keyPair.privateKey, "pkcs8");
+
+                        const txWrite = db.transaction("keys", "readwrite");
+                        const storeWrite = txWrite.objectStore("keys");
+
+                        storeWrite.put({
+                            id: storageKeyId, // Зберігаємо під ID юзера
+                            publicKey: pubPem,
+                            privateKey: privPem
+                        });
+
+                        await new Promise((resTx, rejTx) => {
+                            txWrite.oncomplete = () => resTx();
+                            txWrite.onerror = () => rejTx(txWrite.error);
+                        });
+
+                        myPublicKey = pubPem;
+
+                        await uploadPublicKey(pubPem);
+                    }
+
+                    console.log("✅ Crypto Init Complete.");
+                    resolve();
+
+                } catch (err) {
+                    console.error("Crypto Init Error:", err);
+                    reject(err);
+                }
+            };
+
+            request.onerror = (e) => reject(e);
+        });
+    }
+
+    async function uploadPublicKey(pem) {
+        await fetch(`${GATEWAY_URL}/api/v1/user/${myUserId}/public-key`, {
+            method: 'POST',
+            headers: { 'Authorization': currentToken, 'Content-Type': 'text/plain' }, // text/plain бо це просто рядок
+            body: pem
+        });
+        console.log("⬆️ Public Key uploaded to server");
+    }
+
+
+    const StorageManager = {
+        getDB() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open("SecureChatDB", 3
+                );
+                req.onsuccess = e => resolve(e.target.result);
+                req.onerror = e => reject(e);
+            });
+        },
+
+        // Зберегти одне повідомлення
+        async saveMessage(chatId, msg) {
+            const db = await this.getDB();
+            const tx = db.transaction("messages", "readwrite");
+            const store = tx.objectStore("messages");
+
+            // Ми додаємо поле chatId до об'єкта повідомлення, щоб знати, до якого чату воно належить
+            // Важливо: msg.id має бути унікальним ID з сервера (або згенеруй timestamp якщо нема)
+            const msgToSave = {
+                ...msg,
+                chatId: chatId,
+                id: msg.id || `${chatId}-${msg.timestamp}-${Math.random()}` // Фолбек ID
+            };
+
+            store.put(msgToSave);
+        },
+
+        // Завантажити історію чату
+        async loadMessages(chatId) {
+            const db = await this.getDB();
+            return new Promise((resolve) => {
+                const tx = db.transaction("messages", "readonly");
+                const store = tx.objectStore("messages");
+                const index = store.index("chatId");
+
+                const request = index.getAll(chatId); // Отримати всі повідомлення для цього chatId
+
+                request.onsuccess = () => {
+                    // Сортуємо за часом (на всяк випадок)
+                    const msgs = request.result.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                    resolve(msgs);
+                };
+            });
+        }
+    };
+
+
+
+
+
+
+
+
+
+
+
+    // --- ENV ---
+    const HOST = window.location.hostname;
+    const PORT = window.location.port ? ":" + window.location.port : "";
+    const PROTOCOL = window.location.protocol;
+    const WS_PROTOCOL = PROTOCOL === 'https:' ? 'wss:' : 'ws:';
+    const GATEWAY_URL = `${PROTOCOL}//${HOST}${PORT}`;
+    const WS_URL = `${WS_PROTOCOL}//${HOST}${PORT}/chat`;
+
+    // --- GLOBAL STATE ---
+    let stompClient = null;
+    let currentToken = null;
+    let myUserId = null;
+
+    // UI Context
+    let viewMode = 'dm'; // 'dm' or 'guild'
+    let currentGuild = null;
+    let currentChannel = null;
+    let currentDmUserId = null;
+
+    let activeChannelSubscription = null;
+
+    // Cache
+    let chatHistory = {}; // key: "dm-{id}" or "guild-{gid}-chan-{cid}"
+    let userNamesCache = {};
+
+    let pendingFiles = [];
+
+    function handleFileSelect(input) {
+        if (!input.files || input.files.length === 0) return;
+
+        const files = Array.from(input.files);
+
+        // Додаємо файли в чергу
+        files.forEach(file => {
+            pendingFiles.push(file);
+        });
+
+        renderAttachmentPreview();
+        input.value = ''; // Очищаємо інпут, щоб можна було додати ще ті самі файли
+    }
+    function removePendingFile(index) {
+        pendingFiles.splice(index, 1);
+        renderAttachmentPreview();
+    }
+
+    function renderAttachmentPreview() {
+        const container = document.getElementById('attachmentPreview');
+        container.innerHTML = '';
+
+        if (pendingFiles.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'flex';
+
+        pendingFiles.forEach((file, index) => {
+            const div = document.createElement('div');
+            div.className = 'preview-item';
+
+            // Якщо це картинка - показуємо прев'ю
+            if (file.type.startsWith('image/')) {
+                const img = document.createElement('img');
+                img.className = 'preview-img';
+                img.src = URL.createObjectURL(file); // Локальне прев'ю
+                img.onload = () => URL.revokeObjectURL(img.src); // Чистимо пам'ять
+                div.appendChild(img);
+            } else {
+                // Для інших файлів - іконка
+                div.innerHTML = `<i class="fas fa-file preview-file-icon"></i>`;
+            }
+
+            // Кнопка видалення
+            const btn = document.createElement('div');
+            btn.className = 'remove-btn';
+            btn.innerHTML = '<i class="fas fa-times"></i>';
+            btn.onclick = () => removePendingFile(index);
+            div.appendChild(btn);
+
+            container.appendChild(div);
+        });
+    }
+
+
+    // Функція завантаження фото на бекенд
+    async function uploadAndSendPhoto(input) {
+        if ((viewMode === 'dm' && !currentDmUserId) ||
+            (viewMode === 'guild' && (!currentGuild || !currentChannel))) {
+            alert("Спочатку оберіть чат!");
+            input.value = '';
+            return;
+        }
+
+        if (!input.files || !input.files[0]) return;
+
+        const file = input.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await fetch(`${GATEWAY_URL}/api/v1/chat/media/upload/files`, {
+                method: 'POST',
+                headers: { 'Authorization': currentToken },
+                body: formData
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+
+                // 🔥 ТУТ ЗМІНИ:
+                if (data.originalUrl && data.thumbnailUrl) {
+                    // Склеюємо: "THUMB ||| ORIGINAL"
+                    // Це дозволить нам зберегти обидва посилання в одному текстовому полі БД
+                    sendMessage(`${data.thumbnailUrl}|||${data.originalUrl}`);
+                } else if (data.originalUrl) {
+                    // Фолбек, якщо мініатюри немає
+                    sendMessage(data.originalUrl);
+                }
+            } else {
+                alert("Помилка завантаження: " + res.status);
+            }
+        } catch (e) {
+            console.error("Upload error:", e);
+        }
+        input.value = '';
+    }
+
+    // --- ПЕРЕСИЛАННЯ ПОВІДОМЛЕНЬ ---
+
+    // --- НОВІ ЗМІННІ ---
+    // --- ЗМІННІ ДЛЯ ЗАПИСУ ---
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false; // Прапорець стану
+    let currentStream = null; // Щоб зупиняти мікрофон
+
+    // --- ГОЛОВНА ФУНКЦІЯ (ПЕРЕМИКАЧ) ---
+    async function toggleRecording() {
+        if (!isRecording) {
+            await startRecording();
+        } else {
+            stopRecording();
+        }
+    }
+
+    // --- ПОЧАТОК ЗАПИСУ ---
+    async function startRecording() {
+        try {
+            // 1. Питаємо доступ
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            currentStream = stream; // Зберігаємо, щоб потім вимкнути
+
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+
+            // 2. Збираємо дані
+            mediaRecorder.ondataavailable = e => {
+                if(e.data.size > 0) audioChunks.push(e.data);
+            };
+
+            // 3. Коли зупинили - відправляємо
+            mediaRecorder.onstop = async () => {
+                // Якщо шматочків немає (надто короткий клік), ігноруємо
+                if (audioChunks.length === 0) return;
+
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                const file = new File([audioBlob], "voice_msg.webm", { type: "audio/webm" });
+
+                // Додаємо в чергу
+                pendingFiles = [file];
+
+                // Відправляємо
+                await sendMessage();
+
+                // 🔥 ВАЖЛИВО: Зупиняємо мікрофон повністю (щоб зникла червона точка в браузері)
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                    currentStream = null;
+                }
+            };
+
+            // 4. Старт
+            mediaRecorder.start();
+            isRecording = true;
+
+            // Візуал
+            const btn = document.getElementById('recordBtn');
+            btn.classList.add('recording');
+            btn.innerHTML = '<i class="fas fa-stop"></i>'; // Змінюємо іконку на "Стоп"
+
+        } catch(e) {
+            console.error(e);
+            alert("Mic access denied or error: " + e.message);
+        }
+    }
+
+    // --- ЗУПИНКА ЗАПИСУ ---
+    function stopRecording() {
+        if(mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop(); // Це викличе onstop і відправку
+            isRecording = false;
+
+            // Візуал назад
+            const btn = document.getElementById('recordBtn');
+            btn.classList.remove('recording');
+            btn.innerHTML = '<i class="fas fa-microphone"></i>';
+        }
+    }
+
+
+    function handleEnter(e) { if(e.key === 'Enter') sendMessage(); }
+
+    // --- НОВА ФУНКЦІЯ ВІДПРАВКИ ---
+    // --- НОВА ФУНКЦІЯ ВІДПРАВКИ ---
+    async function sendMessage() {
+        const input = document.getElementById('messageInput');
+        const text = input.value.trim();
+
+        // Якщо пустий текст і немає файлів - виходимо
+        if (!text && pendingFiles.length === 0) return;
+
+        input.disabled = true;
+
+        let uploadedAttachments = [];
+
+        // 1. Завантаження файлів (S3)
+        if (pendingFiles.length > 0) {
+            const uploadPromises = pendingFiles.map(async (file) => {
+                const formData = new FormData();
+                formData.append('file', file);
+                try {
+                    const res = await fetch(`${GATEWAY_URL}/api/v1/chat/media/upload/files`, {
+                        method: 'POST', headers: { 'Authorization': currentToken },
+                        body: formData
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        return {
+                            url: data.url,
+                            thumbnailUrl: data.thumbnailUrl,
+                            fileName: data.fileName,
+                            type: data.type
+                        };
+                    }
+                } catch (e) { console.error(e); }
+                return null;
+            });
+            uploadedAttachments = (await Promise.all(uploadPromises)).filter(r => r !== null);
+        }
+
+        // 2. Визначаємо тип повідомлення
+        let msgType = uploadedAttachments.length > 0 ? uploadedAttachments[0].type : 'TEXT';
+
+        // --- 🔥 E2EE ШИФРУВАННЯ ---
+        let finalContent = text;
+
+        // Шифруємо тільки приватні повідомлення (DM) і якщо є текст
+        if (viewMode === 'dm' && currentDmUserId && text) {
+            const recipientData = await resolveUserData(currentDmUserId, true);
+
+            if (recipientData.publicKey) {
+                console.log("🔒 Encrypting message for both...");
+
+                // Шифруємо (для друга + для себе)
+                const encrypted = await CryptoManager.encryptMessage(text, recipientData.publicKey, myPublicKey);
+
+                if (encrypted) {
+                    finalContent = encrypted; // Це JSON-рядок з шифром
+                }
+            } else {
+                console.warn("⚠️ Recipient has no Public Key!");
+            }
+        }
+        // ---------------------------
+
+        // 3. Формуємо об'єкт для WebSocket (Тут content ЗАШИФРОВАНИЙ)
+        let wsMsg = {
+            content: finalContent,
+            attachments: uploadedAttachments,
+            type: msgType,
+            guildId: currentGuild ? currentGuild.id : null,
+            channelId: currentChannel ? currentChannel.id : null,
+            recipientId: currentDmUserId
+        };
+
+        // 4. Відправляємо та зберігаємо
+        if (viewMode === 'dm' && currentDmUserId) {
+            const key = `dm-${currentDmUserId}`;
+
+            // А. Відправляємо на сервер (шифр)
+            stompClient.send("/app/private/message", {}, JSON.stringify(wsMsg));
+
+            const tempId = Date.now(); // Тимчасовий ID
+
+            // Б. 🔥 ЗБЕРІГАЄМО В БАЗУ (IndexedDB) -> ЗАШИФРОВАНЕ
+            // Ми беремо wsMsg, де content - це шифр.
+            const msgForDb = {
+                ...wsMsg,
+                id: tempId,
+                sender: "Me",
+                timestamp: new Date()
+            };
+            StorageManager.saveMessage(key, msgForDb);
+
+            // В. 🔥 ПОКАЗУЄМО НА ЕКРАНІ -> РОЗШИФРОВАНЕ (ТЕКСТ)
+            // Ми створюємо окремий об'єкт для відображення "прямо зараз"
+            const msgForUi = {
+                ...wsMsg,
+                content: text, // Підміняємо шифр на текст, щоб не чекати розшифровки
+                id: tempId,
+                sender: "Me",
+                timestamp: new Date()
+            };
+
+            pushMessage(key, msgForUi);
+            renderMessages(key);
+
+        } else if (viewMode === 'guild' && currentGuild && currentChannel) {
+            const dest = `/app/chat/${currentGuild.id}/${currentChannel.id}/sendMessage`;
+            stompClient.send(dest, {}, JSON.stringify(wsMsg));
+
+            // 🔥 ВИПРАВЛЕННЯ: Додаємо повідомлення собі локально ВІДРАЗУ
+            // Щоб не чекати, поки сервер поверне його (бо ми ігноруємо своє ж повідомлення в handleIncomingMessage)
+
+            const tempKey = `guild-${currentGuild.id}-chan-${currentChannel.id}`;
+
+            const msgForUi = {
+                ...wsMsg,
+                id: Date.now(), // Тимчасовий ID
+                sender: myUserId, // Або "Me", залежно від того, як ти рендериш
+                timestamp: new Date()
+            };
+
+            // Додаємо в історію
+            pushMessage(tempKey, msgForUi);
+
+            // Малюємо
+            renderMessages(tempKey);
+        }
+
+        // 5. Очищаємо
+        input.value = ''; input.disabled = false; input.focus();
+        pendingFiles = [];
+        renderAttachmentPreview();
+    }
+
+
+    // --- ЗМІНЕНА ЛОГІКА ОТРИМАННЯ ЮЗЕРІВ ---
+
+    // Замість let userNamesCache = {}; використовуємо це:
+
+
+    // --- НОВА ФУНКЦІЯ ВІДОБРАЖЕННЯ ---
+    async function renderMessages(key) {
+        const container = document.getElementById('messagesContainer');
+        container.innerHTML = "";
+
+        // Отримуємо повідомлення
+        let msgs = chatHistory[key] || [];
+
+        // 🔥 ФІКС ТУТ: Сортуємо їх за часом перед тим як малювати
+        // Це гарантує, що вони завжди будуть по порядку, незалежно від того, як прийшли
+        msgs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+        // Прокрутка вниз
+        setTimeout(() => { container.scrollTop = container.scrollHeight; }, 0);
+
+        for (const m of msgs) {
+            const div = document.createElement('div');
+            div.className = 'message';
+
+            const senderIdStr = String(m.sender);
+            const myIdStr = String(myUserId);
+            const isMe = senderIdStr === myIdStr || m.sender === "Me";
+
+            let displayName = "Loading...";
+            let avatarUrl = null;
+
+            if (isMe) {
+                displayName = document.getElementById('my-username').innerText || "Me";
+                const myFooterAvatar = document.getElementById('my-avatar');
+                if (myFooterAvatar && myFooterAvatar.style.backgroundImage && myFooterAvatar.style.backgroundImage !== 'none') {
+                    avatarUrl = myFooterAvatar.style.backgroundImage.slice(5, -2);
+                }
+            } else {
+                const userData = await resolveUserData(m.sender);
+                displayName = userData ? userData.username : `User ${m.sender}`;
+                avatarUrl = userData ? userData.avatarUrl : null;
+            }
+
+            // --- 🔥 E2EE ДЕШИФРУВАННЯ (З ОБРОБКОЮ ПОМИЛОК) ---
+            let contentToShow = m.content;
+
+            if (viewMode === 'dm' && contentToShow && contentToShow.startsWith('{')) {
+                if (typeof myPrivateKey !== 'undefined' && myPrivateKey) {
+                    try {
+                        // Пробуємо розшифрувати
+                        const decrypted = await CryptoManager.decryptMessage(m.content, myPrivateKey, isMe);
+
+                        // Перевіряємо, чи не повернулась помилка текстом
+                        if (!decrypted.startsWith("🔒")) {
+                            contentToShow = decrypted;
+                        } else {
+                            // Якщо не вийшло - показуємо червоний замочок, але НЕ КРАШИМОСЬ
+                            console.warn("Decryption failed for msg", m.id);
+                            contentToShow = `<span style="color:#ed4245; font-style:italic; font-size: 12px;">
+                                <i class="fas fa-lock"></i> Помилка дешифрування (старий ключ)
+                            </span>`;
+                        }
+                    } catch (e) {
+                        console.error("Critical decryption crash:", e);
+                        contentToShow = `<span style="color:#ed4245;">⛔ Error</span>`;
+                    }
+                } else {
+                    contentToShow = "🔒 Waiting for keys...";
+                }
+            }
+            // -----------------------------------------------------
+
+            let avatarHtml = "";
+            if (avatarUrl) {
+                avatarHtml = `<div class="nav-item-avatar" style="min-width:40px; height:40px; border-radius:50%; background-image: url('${avatarUrl}'); background-size: cover; background-position: center; margin-right:15px;"></div>`;
+            } else {
+                avatarHtml = `<div class="nav-item-avatar" style="min-width:40px; height:40px; border-radius:50%; background:${isMe?'#faa61a':'#5865f2'}; display:flex; align-items:center; justify-content:center; margin-right:15px; color:white; font-weight:bold;">
+                ${displayName.substring(0,2).toUpperCase()}
+            </div>`;
+            }
+
+            let htmlBody = "";
+            // Якщо це наш HTML з помилкою - вставляємо як є, інакше текст
+            if (contentToShow.includes("<span")) {
+                htmlBody += `<div style="color:#dcddde;">${contentToShow}</div>`;
+            } else {
+                htmlBody += `<div style="color:#dcddde; white-space:pre-wrap;">${contentToShow}</div>`;
+            }
+
+            // ... (Вкладення - залишаються як були) ...
+            // ... (Вкладення - залишаються як були) ...
+            if (m.attachments && m.attachments.length > 0) {
+                htmlBody += `<div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:5px;">`;
+                m.attachments.forEach(att => {
+                    if (att.type === 'IMAGE') {
+                        htmlBody += `<a href="${att.url}" target="_blank"><img src="${att.thumbnailUrl || att.url}" style="max-width:300px; max-height:300px; border-radius:8px; object-fit:cover;"></a>`;
+                    } else if (att.type === 'VOICE') {
+                        htmlBody += `<audio controls src="${att.url}"></audio>`;
+                    } else {
+                        htmlBody += `<a href="${att.url}" target="_blank" style="color:#00aff4;">File</a>`;
+                    }
+                });
+                htmlBody += `</div>`;
+            }
+
+            // 🔥 БЕЗПЕЧНА ОБРОБКА ЧАСУ 🔥
+            let msgTime = m.timestamp;
+            if (typeof msgTime === 'string' && !msgTime.endsWith('Z')) {
+                msgTime += 'Z'; // Додаємо Z тільки якщо це рядок з сервера
+            }
+            const displayTimeString = new Date(msgTime).toLocaleTimeString();
+
+            // ЗБИРАЄМО HTML
+            div.innerHTML = `
+            ${avatarHtml}
+            <div>
+                <div style="color:white; font-weight:bold; font-size:15px; margin-bottom:5px;">
+                    ${displayName} <span style="font-size:12px; color:#72767d; margin-left:5px;">${displayTimeString}</span>
+                </div>
+                ${htmlBody}
+            </div>`;
+            container.appendChild(div);
+        }
+        container.scrollTop = container.scrollHeight;
+    }
+
+    window.onload = function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token') || localStorage.getItem('jwt_token');
+        if (token) {
+            window.history.replaceState({}, document.title, "/index.html");
+            completeLogin(token);
+        }
+    };
+
+    function toggleForms() {
+        document.getElementById('login-form').classList.toggle('hidden');
+        document.getElementById('register-form').classList.toggle('hidden');
+    }
+
+    function logout() {
+        localStorage.removeItem('jwt_token');
+        location.reload();
+    }
+
+    // --- AUTH ---
+    async function performLogin() {
+        const u = document.getElementById('login-username').value;
+        const p = document.getElementById('login-password').value;
+        try {
+            const res = await fetch(`${GATEWAY_URL}/api/v1/auth/grpc/login`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ username: u, password: p })
+            });
+            const data = await res.json();
+            if(res.ok) completeLogin(data.access_token || data.token);
+            else alert(data.message);
+        } catch(e) { alert("Error: " + e.message); }
+    }
+
+    function performGoogleLogin() { window.location.href = "/oauth2/authorization/google"; }
+
+    // Додай 'async' перед function
+    async function completeLogin(token) {
+        currentToken = token.startsWith("Bearer ") ? token : "Bearer " + token;
+        localStorage.setItem('jwt_token', token);
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('app-container').classList.remove('hidden');
+
+        // Парсинг токена...
+        try {
+            const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+            const payload = JSON.parse(jsonPayload);
+            if(payload.userId) myUserId = payload.userId;
+            else if(payload.id) myUserId = payload.id;
+        } catch(e) {}
+
+        console.log("🚀 Starting Crypto Init for User:", myUserId);
+
+        // 🔥 ЧЕКАЄМО завершення ініціалізації ключів
+        try {
+            await initCrypto();
+        } catch (e) {
+            console.error("Failed to init crypto, chat may not work:", e);
+        }
+
+        // Тільки тепер підключаємося, коли myPrivateKey точно є
+        connectWebSocket();
+        fetchMyGuilds();
+        switchToHome();
+        loadMyProfile();
+    }
+
+
+    async function performRegister() {
+        const username = document.getElementById('reg-username').value;
+        const email = document.getElementById('reg-email').value;
+        const password = document.getElementById('reg-password').value;
+
+        if(!username || !email || !password) return alert("Fill all fields");
+
+        try {
+            const response = await fetch(`${GATEWAY_URL}/api/v1/auth/grpc/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, email, password })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                const token = data.access_token || data.token;
+                if (token) {
+                    completeLogin(token);
+                } else {
+                    alert("Account created. Please log in.");
+                    toggleForms();
+                }
+            } else {
+                alert("Registration failed: " + (data.message || "Unknown error"));
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Network error.");
+        }
+    }
+
+    // --- WEBSOCKET ---
+    function connectWebSocket() {
+        const socket = new WebSocket(WS_URL);
+        stompClient = Stomp.over(socket);
+        stompClient.debug = null;
+
+        stompClient.connect({ 'Authorization': currentToken }, function(frame) {
+            console.log("WS Connected");
+
+            // 1. Слухаємо звичайні повідомлення (чат)
+            stompClient.subscribe('/user/queue/messages', function(msg) {
+                handleIncomingMessage(JSON.parse(msg.body), 'dm');
+            });
+
+
+            stompClient.subscribe('/user/queue/call', function(msg) {
+                // Коли приходить сигнал, передаємо його у функцію WebRTC
+                console.log("📞 [INCOMING SIGNAL RECEIVED]:", msg.body);
+
+                if (typeof handleCallSignal === "function") {
+                    handleCallSignal(JSON.parse(msg.body));
+                }
+            });
+            // 👆 КІНЕЦЬ НОВОГО БЛОКУ 👆
+
+        }, function(err) {
+            console.error("WS Error", err);
+            setTimeout(connectWebSocket, 5000); // Reconnect
+        });
+    }
+
+    function subscribeToChannel(guildId, channelId) {
+        if(activeChannelSubscription) {
+            activeChannelSubscription.unsubscribe();
+        }
+        // Topic: /topic/guild.{guildId}.channel.{channelId}
+        const topic = `/topic/guild/${guildId}/channel/${channelId}`;
+        console.log("Subscribing to " + topic);
+
+        activeChannelSubscription = stompClient.subscribe(topic, function(msg) {
+            handleIncomingMessage(JSON.parse(msg.body), 'guild');
+        });
+    }
+
+    // --- API & LOGIC ---
+
+    async function fetchMyGuilds() {
+        try {
+            const res = await fetch(`${GATEWAY_URL}/api/v1/guilds/me`, {
+                headers: { 'Authorization': currentToken }
+            });
+            if(res.ok) {
+                const guilds = await res.json();
+                renderGuildRail(guilds);
+            }
+        } catch(e) { console.error("Fetch guilds error", e); }
+    }
+
+    async function fetchContacts() {
+        try {
+            const res = await fetch(`${GATEWAY_URL}/api/v1/contacts`, {
+                headers: { 'Authorization': currentToken }
+            });
+            if(res.ok) {
+                const contacts = await res.json();
+                renderContacts(contacts);
+            }
+        } catch(e) {}
+    }
+
+    // --- ACTIONS ---
+
+    function switchToHome() {
+        viewMode = 'dm';
+        currentGuild = null;
+        currentChannel = null;
+
+        // Update UI
+        document.querySelectorAll('.guild-icon').forEach(e => e.classList.remove('active'));
+        document.getElementById('home-button').classList.add('active');
+        document.getElementById('callBtn').style.display = 'none';
+
+        document.getElementById('sidebarHeader').innerHTML = `
+            <span>Direct Messages</span>
+            <div style="display:flex; gap:10px;">
+                <button onclick="openInvitesModal()" style="background:none; border:none; color:white; cursor:pointer;" title="Invites">
+                    <i class="fas fa-envelope"></i>
+                </button>
+                <button onclick="startNewChat()" style="background:none; border:none; color:white; cursor:pointer;"><i class="fas fa-plus"></i></button>
+            </div>
+        `;
+
+        fetchContacts();
+    }
+
+    async function switchToGuild(guildId, guildName, iconUrl) {
+        viewMode = 'guild';
+        currentGuild = { id: guildId, name: guildName };
+        currentDmUserId = null;
+
+        // UI
+        document.querySelectorAll('.guild-icon').forEach(e => e.classList.remove('active'));
+        const activeIcon = document.getElementById(`guild-icon-${guildId}`);
+        if(activeIcon) activeIcon.classList.add('active');
+
+        document.getElementById('callBtn').style.display = 'none';
+
+        // 🔥 FIXED HEADER WITH INVITE BUTTON
+        document.getElementById('sidebarHeader').innerHTML = `
+            <span style="overflow:hidden; text-overflow:ellipsis; max-width: 120px;">${guildName}</span>
+            <div style="display:flex; gap: 8px;">
+                <button onclick="inviteUserToGuild()" style="background:none; border:none; color:white; cursor:pointer;" title="Invite Member">
+                    <i class="fas fa-user-plus"></i>
+                </button>
+                <button onclick="createChannel()" style="background:none; border:none; color:white; cursor:pointer;" title="Create Channel">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+        `;
+
+        // Fetch details (Channels)
+        try {
+            const res = await fetch(`${GATEWAY_URL}/api/v1/guilds/${guildId}`, {
+                headers: { 'Authorization': currentToken }
+            });
+            if(res.ok) {
+                const data = await res.json();
+                renderChannels(data.channels || []);
+            }
+        } catch(e) { console.error(e); }
+    }
+
+    async function selectDM(userId, username) {
+        currentDmUserId = userId;
+        currentChannel = null;
+
+        document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active'));
+        const el = document.getElementById(`contact-${userId}`);
+        if(el) el.classList.add('active');
+
+        document.getElementById('chatTitle').innerText = `@${username}`;
+        document.getElementById('callBtn').style.display = 'block';
+        document.getElementById('chatHeaderIcon').className = 'fas fa-at';
+        enableInput(`Message @${username}`);
+
+        const key = `dm-${userId}`;
+
+        // 🔥 1. Спочатку завантажуємо з бази в пам'ять
+        if (!chatHistory[key] || chatHistory[key].length === 0) {
+            console.log("📂 Loading history from DB for", key);
+            chatHistory[key] = await StorageManager.loadMessages(key);
+        }
+
+        // 🔥 2. Рендеримо
+        renderMessages(key);
+    }
+
+    async function selectChannel(channelId, channelName) {
+        currentChannel = { id: channelId, name: channelName };
+        currentDmUserId = null;
+
+        // UI Updates
+        document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active'));
+        document.getElementById(`chan-${channelId}`).classList.add('active');
+        document.getElementById('chatTitle').innerText = channelName;
+        document.getElementById('chatHeaderIcon').className = 'fas fa-hashtag';
+        enableInput(`Message #${channelName}`);
+
+        // Підписка на WS (для нових повідомлень)
+        subscribeToChannel(currentGuild.id, channelId);
+
+        // 🔥 ЗАВАНТАЖЕННЯ ІСТОРІЇ З БЕКЕНДУ
+        const key = `guild-${currentGuild.id}-chan-${channelId}`;
+        const container = document.getElementById('messagesContainer');
+        container.innerHTML = '<div style="padding:20px; color:#aaa;">Loading history...</div>';
+
+        try {
+            const res = await fetch(`${GATEWAY_URL}/api/v1/chat/guild/${currentGuild.id}/${channelId}`, {
+                headers: { 'Authorization': currentToken }
+            });
+
+            if (res.ok) {
+                const history = await res.json();
+
+                // Зберігаємо в RAM
+                chatHistory[key] = history.map(msg => ({
+                    id: msg.id,
+                    sender: msg.sender,
+                    content: msg.content,
+                    attachments: msg.attachments || [],
+                    timestamp: msg.timestamp
+                }));
+
+                // Рендеримо
+                renderMessages(key);
+            } else {
+                container.innerHTML = '<div style="padding:20px; color:red;">Failed to load history</div>';
+            }
+        } catch (e) {
+            console.error("History fetch error:", e);
+            container.innerHTML = '<div style="padding:20px; color:red;">Network error</div>';
+        }
+    }
+
+    // --- MESSAGING ---
+
+
+
+    function handleIncomingMessage(msg, type) {
+        console.log("📨 [WS INCOMING]", msg);
+
+        // 1. Нормалізація ID для порівняння (щоб точно спіймати "себе")
+        const incomingSender = String(msg.sender);
+        const myId = String(myUserId);
+
+        // 2. Фільтр "Відлуння" (Echo Cancellation)
+        if (incomingSender === myId || msg.sender === "Me") {
+            console.log("🚫 Ignoring echo message from myself");
+            return;
+        }
+
+        let key = "";
+        if (type === 'dm') {
+            const partnerId = (incomingSender === "Me" || incomingSender === myId) ? msg.recipientId : incomingSender;
+            key = `dm-${partnerId}`;
+        } else if (type === 'guild') {
+            key = `guild-${msg.guildId}-chan-${msg.channelId}`;
+        }
+
+        // 3. 🔥 ГОЛОВНИЙ ФІКС ЧАСУ 🔥
+        // Ми ІГНОРУЄМО msg.timestamp від сервера, бо він в UTC і ламає порядок.
+        // Ми завжди ставимо new Date() (час отримання).
+        // Це гарантує, що нове повідомлення ЗАВЖДИ буде знизу.
+        const fixedTimestamp = new Date();
+
+        const msgObj = {
+            id: msg.id || Date.now(),
+            sender: msg.sender,
+            content: msg.content,
+            attachments: msg.attachments,
+            timestamp: fixedTimestamp // <--- Використовуємо наш правильний час
+        };
+
+        // 4. Зберігаємо
+        pushMessage(key, msgObj);
+        StorageManager.saveMessage(key, msgObj);
+
+        // 5. Оновлюємо екран
+        if (
+            (viewMode === 'dm' && `dm-${currentDmUserId}` === key) ||
+            (viewMode === 'guild' && `guild-${currentGuild?.id}-chan-${currentChannel?.id}` === key)
+        ) {
+            renderMessages(key);
+        } else {
+            if(type === 'dm') fetchContacts();
+        }
+    }
+
+    function pushMessage(key, msg) {
+        if(!chatHistory[key]) chatHistory[key] = [];
+        chatHistory[key].push(msg);
+    }
+
+
+
+    // --- CREATION & UTILS ---
+
+    async function createNewGuild() {
+        const name = prompt("Server Name:");
+        if(!name) return;
+        try {
+            const res = await fetch(`${GATEWAY_URL}/api/v1/guilds`, {
+                method: 'POST', headers: {'Authorization': currentToken, 'Content-Type':'application/json'},
+                body: JSON.stringify({ name: name, iconUrl: "" })
+            });
+            if(res.ok) fetchMyGuilds();
+        } catch(e){ console.error(e); }
+    }
+
+    async function createChannel() {
+        if(!currentGuild) return;
+        const name = prompt("Channel Name:");
+        if(!name) return;
+        try {
+            const res = await fetch(`${GATEWAY_URL}/api/v1/guild/${currentGuild.id}/channel/create`, {
+                method: 'POST', headers: {'Authorization': currentToken, 'Content-Type':'application/json'},
+                body: JSON.stringify({ name: name, type: "TEXT" })
+            });
+            if(res.ok) switchToGuild(currentGuild.id, currentGuild.name); // Refresh
+        } catch(e){ console.error(e); }
+    }
+
+    // 🔥 ADDED INVITE FUNCTION
+    // 🔥 ОНОВЛЕНА ФУНКЦІЯ ЗАПРОШЕННЯ
+    async function inviteUserToGuild() {
+        if(!currentGuild) return;
+
+        const targetId = prompt("Enter User ID to invite:");
+        if(!targetId) return;
+
+        try {
+            const res = await fetch(`${GATEWAY_URL}/api/v1/guilds/invite/${currentGuild.id}/${targetId}`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': currentToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ targetUserId: targetId })
+            });
+
+            // 👇 ОБРОБКА СТАТУСІВ
+            if(res.ok || res.status === 201) {
+                alert(`User ${targetId} invited successfully!`);
+            } else if (res.status === 409) {
+                alert(`User ${targetId} is ALREADY a member or has a pending invite!`);
+            } else if (res.status === 404) {
+                alert(`User ${targetId} not found.`);
+            } else {
+                alert("Failed to invite user. Status: " + res.status);
+            }
+        } catch(e){
+            console.error(e);
+            alert("Error inviting user");
+        }
+    }
+
+    // --- RENDERERS ---
+
+    function renderGuildRail(guilds) {
+        // Remove old dynamic guilds
+        document.querySelectorAll('.dynamic-guild').forEach(e => e.remove());
+        const list = document.getElementById('guildList');
+        const insertPoint = list.lastElementChild; // The plus button
+
+        guilds.forEach(g => {
+            const div = document.createElement('div');
+            div.className = 'guild-icon dynamic-guild';
+            div.id = `guild-icon-${g.id}`;
+            div.title = g.name;
+            div.onclick = () => switchToGuild(g.id, g.name, g.iconUrl);
+
+            if(g.iconUrl) div.style.backgroundImage = `url(${g.iconUrl})`;
+            else div.innerText = g.name.substring(0,2).toUpperCase();
+
+            list.insertBefore(div, insertPoint);
+        });
+    }
+
+    function renderContacts(contacts) {
+        const list = document.getElementById('navList');
+        list.innerHTML = `<div style="padding:10px; font-size:12px; font-weight:bold; color:#72767d;">DIRECT MESSAGES</div>`;
+
+        contacts.forEach(async c => {
+            const uid = c.peerId || c.id || c; // Handle DTO variations
+            const div = document.createElement('div');
+            div.className = 'nav-item';
+            div.id = `contact-${uid}`;
+            div.innerHTML = `<div class="nav-item-avatar">?</div><span>Loading...</span>`;
+            div.onclick = () => selectDM(uid, userNamesCache[uid] || "User");
+            list.appendChild(div);
+
+            // Lazy load name
+            // Lazy load name (оновлений)
+            if(!usersCache[uid]) {
+                try {
+                    const r = await fetch(`${GATEWAY_URL}/api/v1/user/${uid}`, {headers:{'Authorization':currentToken}});
+                    if(r.ok) {
+                        const u = await r.json();
+                        usersCache[uid] = { username: u.username, avatarUrl: u.avatarUrl }; // Кешуємо об'єкт
+
+                        updateContactItem(div, u.username, u.avatarUrl);
+                    }
+                } catch(e){}
+            } else {
+                const u = usersCache[uid];
+                updateContactItem(div, u.username, u.avatarUrl);
+            }
+        });
+    }
+
+    function renderChannels(channels) {
+        const list = document.getElementById('navList');
+        list.innerHTML = `<div style="padding:10px; font-size:12px; font-weight:bold; color:#72767d;">TEXT CHANNELS</div>`;
+
+        if(!channels.length) list.innerHTML += `<div style="padding:10px; color:#72767d;">No channels</div>`;
+
+        channels.forEach(ch => {
+            const div = document.createElement('div');
+            div.className = 'nav-item';
+            div.id = `chan-${ch.id}`;
+            div.onclick = () => selectChannel(ch.id, ch.name);
+            div.innerHTML = `<i class="fas fa-hashtag" style="color:#72767d; margin-right:8px;"></i> ${ch.name}`;
+            list.appendChild(div);
+        });
+    }
+
+    function updateContactItem(divElement, name, avatarUrl) {
+        divElement.querySelector('span').innerText = name;
+        const avatarDiv = divElement.querySelector('.nav-item-avatar');
+
+        if (avatarUrl) {
+            avatarDiv.innerText = "";
+            avatarDiv.style.backgroundImage = `url(${avatarUrl})`;
+            avatarDiv.style.backgroundSize = "cover";
+            avatarDiv.style.backgroundColor = "transparent"; // Прибираємо колір фону
+        } else {
+            avatarDiv.style.backgroundImage = "none";
+            avatarDiv.innerText = name.substring(0,2).toUpperCase();
+            avatarDiv.style.backgroundColor = "#5865f2"; // Повертаємо колір
+        }
+    }
+
+    function startNewChat() {
+        const id = prompt("Enter User ID:");
+        if(id) {
+            selectDM(id, "User " + id);
+            fetchContacts(); // Refresh list to include new
+        }
+    }
+
+    function enableInput(ph) {
+        const inp = document.getElementById('messageInput');
+        inp.disabled = false;
+        inp.placeholder = ph;
+        inp.focus();
+    }
+
+    // Зміни глобальну змінну:
+    // let userNamesCache = {};  <-- ВИДАЛИ ЦЕ
+    let usersCache = {};      // <-- ДОДАЙ ЦЕ
+
+    async function resolveUserData(userId, forceFreshKey = false) {
+        // Якщо ключ є в пам'яті і ми не вимагаємо свіжий - беремо з пам'яті
+        if (!forceFreshKey && usersCache[userId]?.publicKey) {
+            return usersCache[userId];
+        }
+
+        console.log(`🌍 Fetching ABSOLUTELY FRESH data for user ${userId}`);
+
+        try {
+            // 🔥 ДОДАНО: ?nocache=${Date.now()}
+            // Це гарантує, що браузер не віддасть старий ключ із кешу!
+            const r = await fetch(`${GATEWAY_URL}/api/v1/user/${userId}?nocache=${Date.now()}`, {
+                headers: { 'Authorization': currentToken }
+            });
+
+            if (!r.ok) return usersCache[userId] || {};
+
+            const u = await r.json();
+
+            usersCache[userId] = {
+                username: u.username,
+                avatarUrl: u.avatarUrl,
+                publicKey: u.publicKey
+            };
+
+            return usersCache[userId];
+        } catch (e) {
+            console.error("Error fetching user data:", e);
+            return {};
+        }
+    }
+
+
+    // --- WEBRTC LOGIC ---
+    // --- WEBRTC LOGIC ---
+    let peerConnection = null;
+    let localStream = null;
+    let remoteStream = null;
+    let isCaller = false;
+    let pendingCandidates = []; // 🔥 НОВА ЗМІННА: Черга для швидких пакетів
+
+    // Стан наших пристроїв
+    let isMicMuted = false;
+    let isCamOff = false;
+
+    const rtcConfig = {
+        iceServers: [
+            // Запасний STUN від Google (щоб було)
+            { urls: 'stun:stun.l.google.com:19302' },
+
+            // Твої реальні сервери від Metered
+            {
+                urls: "stun:stun.relay.metered.ca:80",
+            },
+            {
+                urls: "turn:global.relay.metered.ca:80",
+                username: "48e30329303bae12268c03e9",
+                credential: "VbC/T7Hmf0Z7qQwn",
+            },
+            {
+                urls: "turn:global.relay.metered.ca:80?transport=tcp",
+                username: "48e30329303bae12268c03e9",
+                credential: "VbC/T7Hmf0Z7qQwn",
+            },
+            {
+                urls: "turn:global.relay.metered.ca:443",
+                username: "48e30329303bae12268c03e9",
+                credential: "VbC/T7Hmf0Z7qQwn",
+            },
+            {
+                urls: "turns:global.relay.metered.ca:443?transport=tcp",
+                username: "48e30329303bae12268c03e9",
+                credential: "VbC/T7Hmf0Z7qQwn",
+            }
+        ]
+    };
+
+    async function startCall() {
+        if (!currentDmUserId) return;
+        isCaller = true;
+        pendingCandidates = []; // Очищаємо чергу
+
+        openCallUI("Calling...");
+        await setupPeerConnection();
+
+        try {
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            sendSignal({ type: 'OFFER', sdp: JSON.stringify(offer), recipientId: currentDmUserId });
+        } catch (e) {
+            console.error("Error creating offer:", e);
+            alert("Connection failed");
+            closeCallUI();
+        }
+    }
+
+    async function setupPeerConnection() {
+        peerConnection = new RTCPeerConnection(rtcConfig);
+
+        peerConnection.onicecandidate = event => {
+            if (event.candidate) {
+                const targetId = isCaller ? currentDmUserId : window.incomingCallerId;
+                if(targetId) {
+                    sendSignal({ type: 'CANDIDATE', candidate: JSON.stringify(event.candidate), recipientId: targetId });
+                }
+            }
+        };
+
+        peerConnection.ontrack = event => {
+            const remoteVid = document.getElementById('remoteVideo');
+            if (remoteVid.srcObject !== event.streams[0]) {
+                remoteVid.srcObject = event.streams[0];
+                console.log("✅ Received remote stream!");
+            }
+        };
+
+        localStream = new MediaStream();
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            addStreamToConnection(stream);
+        } catch (err1) {
+            console.warn("Failed to get Video+Audio, trying Audio only...", err1);
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+                addStreamToConnection(stream);
+                isCamOff = true;
+                updateControlButtons();
+            } catch (err2) {
+                console.warn("No media devices found. Joining as listener.", err2);
+                isMicMuted = true;
+                isCamOff = true;
+                updateControlButtons();
+            }
+        }
+    }
+
+    function addStreamToConnection(stream) {
+        localStream = stream;
+        document.getElementById('localVideo').srcObject = stream;
+        stream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, stream);
+        });
+        isMicMuted = false;
+        isCamOff = false;
+        updateControlButtons();
+    }
+
+    async function handleCallSignal(signal) {
+        if (signal.type === 'OFFER') {
+            window.incomingCallerId = signal.senderId;
+            window.pendingOffer = signal.sdp;
+            pendingCandidates = []; // Очищаємо чергу при новому вхідному
+            document.getElementById('callerName').innerText = "User " + signal.senderId;
+            document.getElementById('incomingCallModal').style.display = 'flex';
+        }
+        else if (signal.type === 'ANSWER') {
+            if(!peerConnection) return;
+            const desc = new RTCSessionDescription(JSON.parse(signal.sdp));
+            await peerConnection.setRemoteDescription(desc);
+            document.getElementById('callStatus').innerText = "Connected";
+
+            // 🔥 Обробляємо пакети, які прийшли поки ми підключались
+            processPendingCandidates();
+        }
+        else if (signal.type === 'CANDIDATE') {
+            const candidate = new RTCIceCandidate(JSON.parse(signal.candidate));
+
+            // 🔥 ФІКС: Більше ніяких "if(!peerConnection) return;"!
+            // Зберігаємо кандидатів завжди, навіть якщо друг ще не підняв трубку
+            if (peerConnection && peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+                await peerConnection.addIceCandidate(candidate);
+            } else {
+                console.log("⏳ Queueing ICE candidate (Waiting for Accept or RemoteDesc)");
+                pendingCandidates.push(candidate);
+            }
+        }
+        else if (signal.type === 'HANGUP') {
+            closeCallUI();
+        }
+    }
+
+    async function acceptCall() {
+        document.getElementById('incomingCallModal').style.display = 'none';
+        isCaller = false;
+
+        openCallUI("Connecting...");
+        await setupPeerConnection();
+
+        if (!peerConnection) return;
+
+        try {
+            const desc = new RTCSessionDescription(JSON.parse(window.pendingOffer));
+            await peerConnection.setRemoteDescription(desc); // З'єднання встановлено!
+
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+
+            sendSignal({ type: 'ANSWER', sdp: JSON.stringify(answer), recipientId: window.incomingCallerId });
+
+            // 🔥 Тепер безпечно додаємо маршрути, які висіли в черзі
+            processPendingCandidates();
+
+        } catch (e) {
+            console.error(e);
+            alert("Failed to accept call");
+            closeCallUI();
+        }
+    }
+
+    // 🔥 ФУНКЦІЯ ДЛЯ ОБРОБКИ ЧЕРГИ
+    async function processPendingCandidates() {
+        while (pendingCandidates.length > 0) {
+            const candidate = pendingCandidates.shift();
+            try {
+                await peerConnection.addIceCandidate(candidate);
+                console.log("✅ Processed queued ICE candidate");
+            } catch (e) {
+                console.error("Failed to add queued candidate", e);
+            }
+        }
+    }
+
+    // --- КЕРУВАННЯ МЕДІА (Mute/Unmute) ---
+    function toggleMic() {
+        if (localStream) {
+            const audioTracks = localStream.getAudioTracks();
+            if (audioTracks.length > 0) {
+                isMicMuted = !isMicMuted;
+                audioTracks.forEach(t => t.enabled = !isMicMuted);
+                updateControlButtons();
+            } else { alert("No microphone detected"); }
+        }
+    }
+
+    function toggleCam() {
+        if (localStream) {
+            const videoTracks = localStream.getVideoTracks();
+            if (videoTracks.length > 0) {
+                isCamOff = !isCamOff;
+                videoTracks.forEach(t => t.enabled = !isCamOff);
+                updateControlButtons();
+            } else { alert("No camera detected"); }
+        }
+    }
+
+    function updateControlButtons() {
+        const btnMic = document.getElementById('btnToggleMic');
+        const btnCam = document.getElementById('btnToggleCam');
+        btnMic.style.backgroundColor = isMicMuted ? '#ed4245' : '#36393f';
+        btnMic.innerHTML = isMicMuted ? '<i class="fas fa-microphone-slash"></i>' : '<i class="fas fa-microphone"></i>';
+        btnCam.style.backgroundColor = isCamOff ? '#ed4245' : '#36393f';
+        btnCam.innerHTML = isCamOff ? '<i class="fas fa-video-slash"></i>' : '<i class="fas fa-video"></i>';
+    }
+
+    // --- УТІЛІТИ ДЛЯ ДЗВІНКА ---
+    function rejectCall() {
+        document.getElementById('incomingCallModal').style.display = 'none';
+        sendSignal({ type: 'HANGUP', recipientId: window.incomingCallerId });
+    }
+
+    function hangUp() {
+        const targetId = isCaller ? currentDmUserId : window.incomingCallerId;
+        if(targetId) sendSignal({ type: 'HANGUP', recipientId: targetId });
+        closeCallUI();
+    }
+
+    function openCallUI(status) {
+        document.getElementById('callModal').style.display = 'flex';
+        document.getElementById('callStatus').innerText = status;
+    }
+
+    function closeCallUI() {
+        document.getElementById('callModal').style.display = 'none';
+        document.getElementById('incomingCallModal').style.display = 'none';
+
+        if (localStream) {
+            localStream.getTracks().forEach(track => track.stop());
+            localStream = null;
+        }
+        if (peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
+        isMicMuted = false;
+        isCamOff = false;
+        pendingCandidates = []; // Очищаємо чергу
+    }
+
+    function sendSignal(payload) {
+        if (!stompClient || !stompClient.connected) {
+            console.warn("⚠️ Неможливо відправити сигнал дзвінка: WebSocket відключено");
+            return;
+        }
+        payload.senderId = myUserId;
+
+        // 🔥 ДОДАЙ ЦЕЙ РЯДОК:
+        console.log("📤 [OUTGOING SIGNAL SENT]:", payload);
+
+        stompClient.send("/app/private/call", {}, JSON.stringify(payload));
+    }
+
+    // --- INVITES LOGIC ---
+
+    async function openInvitesModal() {
+        document.getElementById('invitesModal').style.display = 'flex';
+        await fetchMyInvites();
+    }
+
+    async function fetchMyInvites() {
+        const list = document.getElementById('invitesList');
+        list.innerHTML = `<div style="color:#72767d; text-align:center; padding:20px;">Loading...</div>`;
+
+        try {
+            // GET /api/v1/invites (Header X-User-Id додається автоматично на бекенді, якщо ти використовуєш Gateway,
+            // але тут ми шлемо Authorization токен, і Gateway сам розбереться або сервіс візьме з токена)
+            const res = await fetch(`${GATEWAY_URL}/api/v1/invites`, {
+                headers: { 'Authorization': currentToken }
+            });
+
+            if (res.ok) {
+                const invites = await res.json();
+                renderInvites(invites);
+            } else {
+                list.innerHTML = `<div style="color:#ed4245; text-align:center;">Failed to load invites</div>`;
+            }
+        } catch (e) {
+            console.error(e);
+            list.innerHTML = `<div style="color:#ed4245; text-align:center;">Network error</div>`;
+        }
+    }
+
+    function renderInvites(invites) {
+        const list = document.getElementById('invitesList');
+        list.innerHTML = '';
+
+        if (invites.length === 0) {
+            list.innerHTML = `<div style="color:#72767d; text-align:center; padding:20px;">No pending invites 🤷‍♂️</div>`;
+            return;
+        }
+
+        invites.forEach(inv => {
+            const div = document.createElement('div');
+            div.style.cssText = "background:#2f3136; padding:10px; border-radius:5px; display:flex; justify-content:space-between; align-items:center;";
+
+            // Припускаємо, що InviteDto має поля: id, guildName, inviterName (або senderId)
+            // Якщо поля інші - поправ тут
+            const guildName = inv.guildName || `Guild #${inv.guildId}`;
+            const fromUser = inv.inviterName || `User #${inv.inviterId}`;
+
+            div.innerHTML = `
+                <div>
+                    <div style="color:white; font-weight:bold;">${guildName}</div>
+                    <div style="color:#b9bbbe; font-size:12px;">Invited by ${fromUser}</div>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="respondToInvite(${inv.id}, 'accept')" style="background:#3ba55c; color:white; border:none; padding:8px 12px; border-radius:3px; cursor:pointer;" title="Accept">
+                        <i class="fas fa-check"></i>
+                    </button>
+                    <button onclick="respondToInvite(${inv.id}, 'decline')" style="background:#ed4245; color:white; border:none; padding:8px 12px; border-radius:3px; cursor:pointer;" title="Decline">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            list.appendChild(div);
+        });
+    }
+
+    async function respondToInvite(inviteId, action) {
+        // action = 'accept' або 'decline'
+        try {
+            const res = await fetch(`${GATEWAY_URL}/api/v1/invites/${inviteId}/${action}`, {
+                method: 'POST',
+                headers: { 'Authorization': currentToken }
+            });
+
+            if (res.ok) {
+                // Оновлюємо список
+                await fetchMyInvites();
+                // Якщо прийняли - оновлюємо список гільдій зліва
+                if (action === 'accept') {
+                    fetchMyGuilds();
+                }
+            } else {
+                alert(`Failed to ${action} invite`);
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error processing invite");
+        }
+    }
+
+    // --- PROFILE LOGIC ---
+
+    let currentEmail = ""; // Для збереження поточного email
+    let avatarFileToUpload = null;
+
+    async function openProfileModal() {
+        if (!myUserId) return;
+
+        // Скидаємо стан
+        avatarFileToUpload = null;
+        document.getElementById('avatarUploadInput').value = "";
+
+        document.getElementById('editUsername').value = "Loading...";
+        document.getElementById('profileModal').style.display = 'flex';
+
+        try {
+            const res = await fetch(`${GATEWAY_URL}/api/v1/user/${myUserId}`, {
+                headers: { 'Authorization': currentToken }
+            });
+
+            if (res.ok) {
+                const user = await res.json();
+
+                document.getElementById('editUsername').value = user.username;
+                document.getElementById('editEmail').value = user.email;
+                currentEmail = user.email;
+
+                const avatarDiv = document.getElementById('profileAvatarPreview');
+                const icon = document.getElementById('defaultAvatarIcon');
+
+                // ЄДИНИЙ БЛОК ЛОГІКИ:
+                if (user.avatarUrl) {
+                    avatarDiv.style.backgroundImage = `url(${user.avatarUrl}?t=${new Date().getTime()})`;
+                    avatarDiv.innerText = "";
+                    if (icon) icon.style.display = 'none';
+                } else {
+                    avatarDiv.style.backgroundImage = "none";
+                    avatarDiv.innerText = user.username.substring(0, 2).toUpperCase();
+                    if (icon) icon.style.display = 'block';
+                }
+
+            } else {
+                alert("Failed to fetch profile data");
+                document.getElementById('profileModal').style.display = 'none';
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Failed to load profile");
+            document.getElementById('profileModal').style.display = 'none';
+        }
+    }
+
+    function previewAvatar(input) {
+        if (input.files && input.files[0]) {
+            avatarFileToUpload = input.files[0];
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const avatarDiv = document.getElementById('profileAvatarPreview');
+                avatarDiv.style.backgroundImage = `url(${e.target.result})`;
+                avatarDiv.innerText = "";
+            }
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+
+    async function saveProfile() {
+        const newUsername = document.getElementById('editUsername').value;
+        const newEmail = document.getElementById('editEmail').value;
+        const btn = event.target;
+
+        btn.disabled = true;
+        btn.innerText = "Saving...";
+
+        try {
+            // --- 1. Upload Avatar (if selected) ---
+            if (avatarFileToUpload) {
+                const formData = new FormData();
+                formData.append("file", avatarFileToUpload);
+
+                const uploadRes = await fetch(`${GATEWAY_URL}/api/v1/user/${myUserId}/avatar`, {
+                    method: 'POST',
+                    headers: { 'Authorization': currentToken }, // No Content-Type for FormData
+                    body: formData
+                });
+
+                if (!uploadRes.ok) {
+                    const errorText = await uploadRes.text();
+                    throw new Error(`Failed to upload avatar: ${errorText}`);
+                }
+            }
+
+            // --- 2. Update Text Data (PATCH) ---
+            const patchRes = await fetch(`${GATEWAY_URL}/api/v1/user/${myUserId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': currentToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    id: myUserId,
+                    username: newUsername,
+                    email: newEmail
+                })
+            });
+
+            if (!patchRes.ok) {
+                const errorText = await patchRes.text();
+                throw new Error(errorText || "Failed to update profile");
+            }
+
+            // --- 3. Handle Success ---
+            const updatedUser = await patchRes.json();
+
+            // Update Footer UI
+            document.getElementById('my-username').innerText = updatedUser.username;
+
+            // Update Avatar in Footer
+            const myAvatarDiv = document.getElementById('my-avatar');
+            if (updatedUser.avatarUrl) {
+                myAvatarDiv.innerText = "";
+                myAvatarDiv.style.backgroundImage = `url(${updatedUser.avatarUrl})`;
+                myAvatarDiv.style.backgroundSize = "cover";
+            } else {
+                myAvatarDiv.style.backgroundImage = "none";
+                myAvatarDiv.innerText = updatedUser.username.substring(0, 2).toUpperCase();
+            }
+
+            // 🔥 CRITICAL FIX: Reset the file input and global variable
+            avatarFileToUpload = null;
+            document.getElementById('avatarUploadInput').value = "";
+
+            alert("Profile saved!");
+            document.getElementById('profileModal').style.display = 'none';
+
+        } catch (e) {
+            console.error(e);
+            alert("Error saving profile: " + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Save Changes";
+        }
+    }
+
+
+    async function loadMyProfile() {
+        if (!myUserId) return;
+        try {
+            // Запитуємо свої дані з сервера
+            const res = await fetch(`${GATEWAY_URL}/api/v1/user/${myUserId}`, {
+                headers: { 'Authorization': currentToken }
+            });
+
+            if (res.ok) {
+                const user = await res.json();
+
+                // 1. Оновлюємо ім'я в футері
+                document.getElementById('my-username').innerText = user.username;
+
+                // 2. Оновлюємо аватарку в футері
+                const myAvatarDiv = document.getElementById('my-avatar');
+                if (user.avatarUrl) {
+                    myAvatarDiv.innerText = "";
+                    myAvatarDiv.style.backgroundImage = `url(${user.avatarUrl})`;
+                    myAvatarDiv.style.backgroundSize = "cover";
+                    myAvatarDiv.style.backgroundColor = "transparent";
+                } else {
+                    myAvatarDiv.style.backgroundImage = "none";
+                    myAvatarDiv.innerText = user.username.substring(0, 2).toUpperCase();
+                    myAvatarDiv.style.backgroundColor = "#5865f2";
+                }
+            }
+        } catch (e) {
+            console.error("Failed to load my profile", e);
+        }
+    }
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,12 @@
+#grpc:
+#  client:
+#    user-service:
+#      # Формат: static://<docker-service-name>:<internal-port>
+#      address: static://user-service:9090
+#      negotiation-type: plaintext
+spring:
+  datasource:
+    hikari:
+      max-lifetime: 60000
+      connection-timeout: 20000
+      validation-timeout: 3000

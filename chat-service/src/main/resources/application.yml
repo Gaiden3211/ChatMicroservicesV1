@@ -1,0 +1,51 @@
+server:
+  port: 8085
+
+spring:
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 10MB
+      max-request-size: 10MB
+  datasource:
+    hikari:
+      max-lifetime: 60000
+      connection-timeout: 20000
+      validation-timeout: 3000
+  application:
+    name: chat-service
+
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  # --- 4. Redis ---
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+
+
+application:
+  security:
+    jwt:
+      secret-key: ${APPLICATION_SECURITY_JWT_SECRET_KEY}
+
+
+grpc:
+  client:
+    guild-service:
+      address: static://${GUILD_SERVICE_GRPC_HOST:localhost}:${GUILD_SERVICE_GRPC_PORT:9093}
+      negotiation-type: plaintext

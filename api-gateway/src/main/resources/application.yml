@@ -1,0 +1,134 @@
+server:
+  port: 8443
+  ssl:
+    enabled: true
+    key-store: file:/certs/gateway.p12
+    key-store-password: password
+    key-store-type: PKCS12
+    key-alias: gateway
+
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+      enabled: true
+  datasource:
+    hikari:
+      max-lifetime: 60000
+      connection-timeout: 20000
+      validation-timeout: 3000
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      websocket:
+        enabled: true
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOriginPatterns: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowCredentials: true
+      routes:
+        - id: auth-service
+          uri: http://auth-service:8082
+          predicates:
+            - Path=/api/v1/auth/**
+
+        - id: auth-service-docs
+          uri: http://auth-service:8082
+          predicates:
+            - Path=/v3/api-docs/auth-service
+          filters:
+
+            - RewritePath=/v3/api-docs/auth-service, /v3/api-docs
+
+
+        - id: user-service
+          uri: http://user-service:8080
+          predicates:
+            - Path=/api/v1/user/**
+          filters:
+            - AuthenticationFilter
+
+        - id: user-service-docs
+          uri: http://user-service:8080
+          predicates:
+            - Path=/v3/api-docs/user-service
+          filters:
+            - RewritePath=/v3/api-docs/user-service, /v3/api-docs
+
+          # --- Guild Service ---
+        - id: guild-service
+          uri: ${GUILD_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/api/v1/guilds/**, /api/v1/invites/**
+          filters:
+            - AuthenticationFilter
+
+        - id: guild-service-docs
+          uri: ${GUILD_SERVICE_URL:http://localhost:8083}
+          predicates:
+            - Path=/v3/api-docs/guild-service
+          filters:
+            - RewritePath=/v3/api-docs/guild-service, /v3/api-docs
+
+        - id: chat-service-rest
+          uri: http://chat-service:8085
+          predicates:
+            - Path=/api/v1/contacts/**, /api/v1/chat/**
+          filters:
+            - AuthenticationFilter
+
+        - id: chat-service
+          uri: ws://chat-service:8085
+          predicates:
+            - Path=/chat/**
+
+        - id: auth-service-oauth
+          uri: http://auth-service:8082
+          predicates:
+            - Path=/login/oauth2/**, /oauth2/**
+
+        - id: smart-text-service
+          uri: http://98.81.203.233:8089
+          predicates:
+            - Path=/api/v2/text/**
+          filters:
+            - AuthenticationFilter
+
+
+application:
+  security:
+    jwt:
+      secret-key: ${APPLICATION_SECURITY_JWT_SECRET_KEY}
+
+
+
+logging:
+  file:
+    name: /logs/gateway.log
+  level:
+    root: INFO
+    org.springframework.cloud.gateway: DEBUG
+    org.springframework.cloud.gateway.handler.RoutePredicateHandlerMapping: DEBUG
+    org.springframework.web.reactive.socket: DEBUG
+    org.springframework.web.server.adapter.HttpWebHandlerAdapter: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    urls:
+      - name: Guild Service
+        url: /v3/api-docs/guild-service
+      - name:  User Service
+        url: /v3/api-docs/user-service
+      - name: Auth Service
+        url: /v3/api-docs/auth-service

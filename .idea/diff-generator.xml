@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DiffGenerationConfig">
+    <option name="snapshotDb" value="false" />
+    <option name="snapshotDbValue" value="3e4e4fcd-39b5-422d-b8ba-a9292bc68f54" />
+    <option name="snapshotModelValue" value="chat-service:chat-service" />
+    <option name="sourceDbValue" value="ddbdfbfe-2b7d-4fbe-bfb4-896681ce4735" />
+    <option name="sourceModelValue" value="chat-service:chat-service" />
+    <option name="targetDbValue" value="ddbdfbfe-2b7d-4fbe-bfb4-896681ce4735" />
+  </component>
+</project>

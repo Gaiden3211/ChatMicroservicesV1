@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    hikari:
+      # Повинно бути менше, ніж таймаут на Neon (зазвичай 30-60 сек)
+      max-lifetime: 60000
+      # Час очікування вільного з'єднання
+      connection-timeout: 20000
+      # Перевірка з'єднання перед використанням
+      validation-timeout: 3000
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope: openid, profile, email
+            redirect-uri: "${AUTH_REDIRECT_URI:https://localhost:8443/login/oauth2/code/google}"
+            client-name: Google
+        provider:
+          google:
+            issuer-uri: https://accounts.google.com
+server:
+  port: 8082
+  # 👇 Додай це налаштування
+  forward-headers-strategy: framework

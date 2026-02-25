@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package gaiden.da.grpc.guild;
+
+option java_multiple_files = true;
+option java_package = "gaiden.da.grpc.guild";
+
+service GuildService {
+  rpc CheckGuildAccess (AccessRequest) returns (AccessResponse);
+}
+
+message AccessRequest {
+  string user_id = 1;  // ID юзера, який хоче написати (беремо з токена)
+  string guild_id = 2; // ID гільдії, куди пишуть
+}
+
+message AccessResponse {
+  bool has_access = 1; // Чи можна пускати
+}

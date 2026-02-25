@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package gaiden.da.user;
+
+option java_package = "gaiden.da.user";
+option java_outer_classname = "UserServiceProto";
+option java_multiple_files = true;
+
+service UserServiceGrpc {
+  rpc GetUserByUsername(GetUserByUsernameRequest) returns (UserResponse);
+
+  rpc GetUserCredentialsByUsername(GetUserCredentialsRequest) returns (UserCredentialDto);
+
+  rpc CreateUser(CreateUserRequest) returns (UserResponse);
+
+  rpc GetUserById(GetUserByIdRequest) returns (UserResponse);
+
+  rpc GetUserByEmail(GetUserByEmailRequest) returns (UserResponse);
+
+//  rpc GetUsersByIds(GetUsersByIdsRequest) returns (GetUsersByIdsResponse);
+}
+
+message UserResponse {
+  int64 id = 1;
+  string username = 2;
+  string email = 3;
+  string createdAt = 4;
+  string updatedAt = 5;
+  repeated int64 ownGuild = 6;
+}
+
+message UserCredentialDto {
+  int64 id = 1;
+  string username = 2;
+  string password = 3; // Це хеш пароля
+}
+
+message GetUserByUsernameRequest {
+  string username = 1;
+}
+
+message GetUserByEmailRequest {
+  string email = 1;
+}
+
+message GetUserCredentialsRequest {
+  string username = 1;
+}
+
+message GetUserByIdRequest {
+  int64 userId = 1;
+}
+
+
+message CreateUserRequest {
+  string username = 1;
+  string email = 2;
+  string password = 3; // Це буде хешований пароль
+}
+
+//message GetUsersByIdsRequest {
+//  repeated int64 userIds = 1; // repeated = список
+//}
+//
+//message GetUsersByIdsResponse {
+//  repeated UserResponse users = 1;
+//}

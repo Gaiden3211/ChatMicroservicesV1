@@ -1,0 +1,54 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          script: |
+            # 1. Переходимо в директорію проекту (ПЕРЕВІРТЕ ШЛЯХ!)
+            cd ~/ChatMicroservicesV1 || { echo "Directory not found"; exit 1; }
+            
+            # 2. Обов'язково оновлюємо код (якщо ви щось змінили в репозиторії)
+            git reset --hard
+            git pull origin main
+            
+            # 3. Перевіряємо, чи бачимо ми файл конфігурації (для діагностики в логах)
+            ls -la docker-compose.yaml || ls -la docker-compose.yml
+            
+            # 4. Зупиняємо старі контейнери
+            docker compose down
+            
+            # 5. Почерговий запуск
+            docker compose up -d --build zookeeper kafka
+            echo "Waiting for Kafka to be ready..."
+            sleep 5
+            docker compose up -d --build user-service
+            sleep 5
+            docker compose up -d --build notification-service
+            sleep 5
+            docker compose up -d --build guild-service  
+            sleep 5
+            docker compose up -d --build auth-service
+            sleep 5
+            docker compose up -d --build chat-service
+            sleep 5
+            docker compose up -d --build api-gateway
+            
+            # 6. Очищення
+            docker image prune -f || true
+            
+            # 7. Фінальна перевірка - виведе список запущених контейнерів у лог Гітхабу
+            docker compose ps
