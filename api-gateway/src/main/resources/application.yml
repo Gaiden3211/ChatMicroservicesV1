@@ -94,7 +94,7 @@ spring:
             - Path=/login/oauth2/**, /oauth2/**
 
         - id: smart-text-service
-          uri: http://98.81.203.233:8089
+          uri: http://54.174.100.94:8089
           predicates:
             - Path=/api/v2/text/**
           filters:
