@@ -100,7 +100,6 @@ spring:
           filters:
             - AuthenticationFilter
 
-
 application:
   security:
     jwt:
