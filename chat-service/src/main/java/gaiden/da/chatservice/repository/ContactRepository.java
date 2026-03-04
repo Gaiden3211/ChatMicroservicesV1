@@ -18,6 +18,6 @@ public interface ContactRepository extends JpaRepository<Contact, Long> {
 
     Optional<Contact> findByOwnerIdAndPeerId(String ownerId, String peerId);
 
-    @Query("SELECT c.id FROM Contact c WHERE c.ownerId = :userId")
+    @Query("SELECT c.peerId FROM Contact c WHERE c.ownerId = :userId")
     List<String> findContactIdsByUserId(@Param("userId") String userId);
 }
