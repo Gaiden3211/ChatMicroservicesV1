@@ -279,6 +279,8 @@ services:
     ports:
       - "8085:8085"
     environment:
+      - GUILD_SERVICE_URL=http://guild-service:8083
+      - USER_SERVICE_URL=http://user-service:8080
       - SPRING_DATASOURCE_URL=jdbc:postgresql://ep-orange-moon-aia3zgw0-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require
       - SPRING_DATASOURCE_USERNAME=neondb_owner
       - SPRING_DATASOURCE_PASSWORD=${POSTGRES_DB_NEON_CHAT_DB}
