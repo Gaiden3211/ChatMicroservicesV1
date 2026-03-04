@@ -25,6 +25,17 @@ public class GuildController {
 
     private final GuildService guildService;
 
+
+
+    @GetMapping("/user/{userId}/ids")
+    public ResponseEntity<List<String>> getUserGuildIds(@PathVariable String userId) {
+
+
+        List<String> guildIds = guildService.getGuildIdsForUser(userId);
+
+        return ResponseEntity.ok(guildIds);
+    }
+
     @Operation(summary = "Create guild", description = "Creates a new guild and becomes the founder of Authority")
     @PostMapping
     public ResponseEntity<GuildDto> createGuild(@RequestBody CreateGuildRequest request,

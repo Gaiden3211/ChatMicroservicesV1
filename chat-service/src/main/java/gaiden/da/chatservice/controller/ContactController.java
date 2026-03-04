@@ -2,14 +2,13 @@ package gaiden.da.chatservice.controller;
 
 import gaiden.da.chatservice.entity.Contact;
 import gaiden.da.chatservice.service.ContactService;
+import gaiden.da.chatservice.service.UserPresenceService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -18,6 +17,7 @@ import java.util.stream.Collectors;
 public class ContactController {
 
     private final ContactService contactService;
+    private final UserPresenceService presenceService;
 
 
     @GetMapping
@@ -29,5 +29,24 @@ public class ContactController {
                 .collect(Collectors.toList());
 
         return ResponseEntity.ok(peerIds);
+    }
+
+    @GetMapping("/user/{userId}/ids")
+    public ResponseEntity<List<String>> getUserContactIds(@PathVariable String userId) {
+
+        // Дістаємо з БД ID всіх друзів (з ким є активні чати/контакти)
+        List<String> contactIds = contactService.getContactIdsForUser(userId);
+
+        return ResponseEntity.ok(contactIds);
+    }
+
+    @PostMapping("/check")
+    public ResponseEntity<Map<String, String>> checkStatuses(@RequestBody List<String> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        Map<String, String> statuses = presenceService.getStatuses(userIds);
+        return ResponseEntity.ok(statuses);
     }
 }

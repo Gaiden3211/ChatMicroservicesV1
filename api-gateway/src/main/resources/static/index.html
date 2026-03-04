@@ -334,6 +334,28 @@
             outline: none;
         }
 
+        /* --- STATUS INDICATORS --- */
+        .avatar-wrapper {
+            position: relative;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        .nav-item-avatar { margin-right: 0 !important; /* Перевизначаємо старий відступ */ }
+
+        .status-dot {
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid var(--bg-secondary);
+            background-color: #747f8d; /* Сірий (Офлайн) за замовчуванням */
+            z-index: 2;
+        }
+        .status-online { background-color: #3ba55c; }
+        .status-offline { background-color: #747f8d; }
+
     </style>
 </head>
 <body>
@@ -1585,34 +1607,43 @@
         }
     }
 
-    // --- WEBSOCKET ---
+    // Змінна для збереження підписок на гільдії, щоб не підписуватися двічі
+    let activeGuildStatusSubs = {};
+
     function connectWebSocket() {
         const socket = new WebSocket(WS_URL);
         stompClient = Stomp.over(socket);
         stompClient.debug = null;
 
-        stompClient.connect({ 'Authorization': currentToken }, function(frame) {
+        // 🔥 ДОДАНО: Передаємо userId в заголовках!
+        stompClient.connect({
+            'Authorization': currentToken,
+            'userId': String(myUserId)
+        }, function(frame) {
             console.log("WS Connected");
 
-            // 1. Слухаємо звичайні повідомлення (чат)
+            // 1. Слухаємо звичайні повідомлення
             stompClient.subscribe('/user/queue/messages', function(msg) {
                 handleIncomingMessage(JSON.parse(msg.body), 'dm');
             });
 
-
+            // 2. Слухаємо дзвінки
             stompClient.subscribe('/user/queue/call', function(msg) {
-                // Коли приходить сигнал, передаємо його у функцію WebRTC
                 console.log("📞 [INCOMING SIGNAL RECEIVED]:", msg.body);
-
                 if (typeof handleCallSignal === "function") {
                     handleCallSignal(JSON.parse(msg.body));
                 }
             });
-            // 👆 КІНЕЦЬ НОВОГО БЛОКУ 👆
+
+            // 🔥 ДОДАНО: Слухаємо оновлення статусів друзів (DM)
+            stompClient.subscribe('/user/queue/status', function(msg) {
+                const data = JSON.parse(msg.body);
+                updateStatusIcon(data.userId, data.status);
+            });
 
         }, function(err) {
             console.error("WS Error", err);
-            setTimeout(connectWebSocket, 5000); // Reconnect
+            setTimeout(connectWebSocket, 5000);
         });
     }
 
@@ -1639,8 +1670,55 @@
             if(res.ok) {
                 const guilds = await res.json();
                 renderGuildRail(guilds);
+
+                // 🔥 ПІДПИСУЄМОСЯ НА СТАТУСИ ГІЛЬДІЙ
+                guilds.forEach(g => {
+                    // Перевіряємо, чи не підписані ми вже на неї
+                    if (!activeGuildStatusSubs[g.id] && stompClient && stompClient.connected) {
+                        activeGuildStatusSubs[g.id] = stompClient.subscribe(`/topic/guild/${g.id}/status`, function(msg) {
+                            const data = JSON.parse(msg.body);
+                            updateStatusIcon(data.userId, data.status);
+                        });
+                    }
+                });
             }
         } catch(e) { console.error("Fetch guilds error", e); }
+    }
+
+    // Змінює колір кружечка
+    function updateStatusIcon(userId, status) {
+        const dot = document.getElementById(`status-${userId}`);
+        if (dot) {
+            if (status === 'ONLINE') {
+                dot.classList.remove('status-offline');
+                dot.classList.add('status-online');
+            } else {
+                dot.classList.remove('status-online');
+                dot.classList.add('status-offline');
+            }
+        }
+    }
+
+    // Запитує статуси з Redis
+    async function fetchInitialStatuses(userIds) {
+        if (!userIds || userIds.length === 0) return;
+        try {
+            const res = await fetch(`${GATEWAY_URL}/api/v1/contacts/check`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': currentToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(userIds)
+            });
+            if (res.ok) {
+                const statuses = await res.json();
+                // statuses виглядає так: {"1010": "ONLINE", "1014": "OFFLINE"}
+                for (const [uid, status] of Object.entries(statuses)) {
+                    updateStatusIcon(uid, status);
+                }
+            }
+        } catch (e) { console.error("Error fetching statuses:", e); }
     }
 
     async function fetchContacts() {
@@ -1651,8 +1729,49 @@
             if(res.ok) {
                 const contacts = await res.json();
                 renderContacts(contacts);
+
+                // 🔥 ОДРАЗУ ЗАПИТУЄМО СТАТУСИ ДЛЯ ВСІХ
+                const userIds = contacts.map(c => c.peerId || c.id || c);
+                fetchInitialStatuses(userIds);
             }
         } catch(e) {}
+    }
+
+    function renderContacts(contacts) {
+        const list = document.getElementById('navList');
+        list.innerHTML = `<div style="padding:10px; font-size:12px; font-weight:bold; color:#72767d;">DIRECT MESSAGES</div>`;
+
+        contacts.forEach(async c => {
+            const uid = c.peerId || c.id || c;
+            const div = document.createElement('div');
+            div.className = 'nav-item';
+            div.id = `contact-${uid}`;
+
+            // 🔥 ДОДАНО: Обгортка avatar-wrapper та status-dot
+            div.innerHTML = `
+            <div class="avatar-wrapper">
+                <div class="nav-item-avatar">?</div>
+                <div class="status-dot status-offline" id="status-${uid}"></div>
+            </div>
+            <span>Loading...</span>
+        `;
+            div.onclick = () => selectDM(uid, usersCache[uid]?.username || "User");
+            list.appendChild(div);
+
+            if(!usersCache[uid]) {
+                try {
+                    const r = await fetch(`${GATEWAY_URL}/api/v1/user/${uid}`, {headers:{'Authorization':currentToken}});
+                    if(r.ok) {
+                        const u = await r.json();
+                        usersCache[uid] = { username: u.username, avatarUrl: u.avatarUrl };
+                        updateContactItem(div, u.username, u.avatarUrl);
+                    }
+                } catch(e){}
+            } else {
+                const u = usersCache[uid];
+                updateContactItem(div, u.username, u.avatarUrl);
+            }
+        });
     }
 
     // --- ACTIONS ---
@@ -1933,37 +2052,7 @@
         });
     }
 
-    function renderContacts(contacts) {
-        const list = document.getElementById('navList');
-        list.innerHTML = `<div style="padding:10px; font-size:12px; font-weight:bold; color:#72767d;">DIRECT MESSAGES</div>`;
 
-        contacts.forEach(async c => {
-            const uid = c.peerId || c.id || c; // Handle DTO variations
-            const div = document.createElement('div');
-            div.className = 'nav-item';
-            div.id = `contact-${uid}`;
-            div.innerHTML = `<div class="nav-item-avatar">?</div><span>Loading...</span>`;
-            div.onclick = () => selectDM(uid, userNamesCache[uid] || "User");
-            list.appendChild(div);
-
-            // Lazy load name
-            // Lazy load name (оновлений)
-            if(!usersCache[uid]) {
-                try {
-                    const r = await fetch(`${GATEWAY_URL}/api/v1/user/${uid}`, {headers:{'Authorization':currentToken}});
-                    if(r.ok) {
-                        const u = await r.json();
-                        usersCache[uid] = { username: u.username, avatarUrl: u.avatarUrl }; // Кешуємо об'єкт
-
-                        updateContactItem(div, u.username, u.avatarUrl);
-                    }
-                } catch(e){}
-            } else {
-                const u = usersCache[uid];
-                updateContactItem(div, u.username, u.avatarUrl);
-            }
-        });
-    }
 
     function renderChannels(channels) {
         const list = document.getElementById('navList');

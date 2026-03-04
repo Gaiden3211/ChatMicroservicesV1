@@ -485,6 +485,10 @@ public class GuildService {
         return guildMapper.toDtos(guilds);
     }
 
+    public List<String> getGuildIdsForUser(String userId) {
+        return guildRepository.findGuildIdsByUserId(userId);
+    }
+
 //    public List<MemberSummaryDto> getMembersSummary(List<Long> memberIds) {
 //        List<Member> members = memberRepository.findAllByIdIn(memberIds);
 //

@@ -16,4 +16,7 @@ public interface GuildRepository extends JpaRepository<Guild, Long> {
     @Query("SELECT m.guild FROM Member m WHERE m.userId = :userId")
     List<Guild> findAllByUserId(@Param("userId") Long userId);
 
+    @Query("SELECT gm.guild.id FROM Member gm WHERE gm.userId = :userId")
+    List<String> findGuildIdsByUserId(@Param("userId") String userId);
+
 }

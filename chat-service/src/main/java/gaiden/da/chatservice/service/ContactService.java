@@ -47,4 +47,8 @@ public class ContactService {
     public List<Contact> getMyContacts(String userId) {
         return contactRepository.findAllByOwnerIdOrderByLastInteractionDesc(userId);
     }
+
+    public List<String> getContactIdsForUser(String userId) {
+        return contactRepository.findContactIdsByUserId(userId);
+    }
 }
