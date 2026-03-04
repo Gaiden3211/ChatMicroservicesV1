@@ -10,6 +10,8 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.List;
+
 @Service
 @Slf4j
 @RequiredArgsConstructor
@@ -17,6 +19,7 @@ public class UserStatusBroadcastService {
 
     private final SimpMessageSendingOperations messagingTemplate;
     private final RestTemplate restTemplate;
+    private final ContactService contactService;
 
     @Value("${GUILD_SERVICE_URL:http://localhost:8083}")
     private String guildServiceUrl;
@@ -34,8 +37,7 @@ public class UserStatusBroadcastService {
 
     private void broadcastToContacts(String userId, UserStatusEvent statusEvent) {
         try {
-            String url = userServiceUrl + "/api/v1/contacts/user/" + userId + "/ids";
-            String[] contactIds = restTemplate.getForObject(url, String[].class);
+            List<String> contactIds = contactService.getContactIdsForUser(userId);
 
             if (contactIds != null) {
                 for (String contactId : contactIds) {
@@ -43,7 +45,7 @@ public class UserStatusBroadcastService {
                 }
             }
         } catch (Exception e) {
-            log.error("❌ Failed to fetch contacts via HTTP for user: {}", userId, e);
+            log.error("❌ Failed to broadcast to contacts for user: {}", userId, e);
         }
     }
 

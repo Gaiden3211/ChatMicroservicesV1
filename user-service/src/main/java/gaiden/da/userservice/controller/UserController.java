@@ -27,6 +27,9 @@ public class UserController {
 
     private final UserService userService;
 
+
+
+
     @PostMapping("/{userId}/public-key")
     public ResponseEntity<Void> uploadPublicKey(@PathVariable Long userId, @RequestBody String publicKey, @RequestHeader("X-User-Id") Long userIdFromToken) {
 
