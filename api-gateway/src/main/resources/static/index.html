@@ -356,6 +356,41 @@
         .status-online { background-color: #3ba55c; }
         .status-offline { background-color: #747f8d; }
 
+
+        /* --- UNREAD BADGES --- */
+        .unread-badge {
+            background-color: #ed4245; /* Фірмовий червоний Discord */
+            color: white;
+            font-size: 11px;
+            font-weight: bold;
+            border-radius: 12px;
+            padding: 2px 6px;
+            margin-left: auto; /* Притискає бейдж до правого краю */
+            box-shadow: 0 0 0 2px var(--bg-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 8px;
+        }
+
+        /* Біла смужка зліва від іконки гільдії (як у Discord) */
+        .guild-unread::before {
+            content: '';
+            position: absolute;
+            left: -12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 8px;
+            height: 8px;
+            background-color: white;
+            border-radius: 50%;
+            transition: height 0.2s, border-radius 0.2s;
+        }
+        .guild-unread:hover::before {
+            height: 20px;
+            border-radius: 4px;
+        }
+
     </style>
 </head>
 <body>
@@ -557,6 +592,40 @@
     </div>
 </div>
 <script>
+
+
+    // --- UNREAD BADGES LOGIC ---
+    function addUnreadBadge(elementId, isGuild = false) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+
+        if (isGuild) {
+            el.classList.add('guild-unread');
+        } else {
+            let badge = el.querySelector('.unread-badge');
+            if (!badge) {
+                badge = document.createElement('div');
+                badge.className = 'unread-badge';
+                badge.innerText = '1';
+                el.appendChild(badge);
+            } else {
+                let count = parseInt(badge.innerText);
+                badge.innerText = count > 98 ? '99+' : count + 1; // Обмеження 99+
+            }
+        }
+    }
+
+    function clearUnreadBadge(elementId, isGuild = false) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+
+        if (isGuild) {
+            el.classList.remove('guild-unread');
+        } else {
+            const badge = el.querySelector('.unread-badge');
+            if (badge) badge.remove();
+        }
+    }
 
 
 
@@ -1800,6 +1869,7 @@
     }
 
     async function switchToGuild(guildId, guildName, iconUrl) {
+        clearUnreadBadge(`guild-icon-${guildId}`, true);
         viewMode = 'guild';
         currentGuild = { id: guildId, name: guildName };
         currentDmUserId = null;
@@ -1837,6 +1907,7 @@
     }
 
     async function selectDM(userId, username) {
+        clearUnreadBadge(`contact-${userId}`);
         currentDmUserId = userId;
         currentChannel = null;
 
@@ -1862,6 +1933,7 @@
     }
 
     async function selectChannel(channelId, channelName) {
+        clearUnreadBadge(`chan-${channelId}`);
         currentChannel = { id: channelId, name: channelName };
         currentDmUserId = null;
 
@@ -1915,50 +1987,57 @@
     function handleIncomingMessage(msg, type) {
         console.log("📨 [WS INCOMING]", msg);
 
-        // 1. Нормалізація ID для порівняння (щоб точно спіймати "себе")
         const incomingSender = String(msg.sender);
         const myId = String(myUserId);
 
-        // 2. Фільтр "Відлуння" (Echo Cancellation)
         if (incomingSender === myId || msg.sender === "Me") {
-            console.log("🚫 Ignoring echo message from myself");
-            return;
+            return; // Ігноруємо свої ж повідомлення
         }
 
         let key = "";
+        let isActiveChat = false;
+
         if (type === 'dm') {
-            const partnerId = (incomingSender === "Me" || incomingSender === myId) ? msg.recipientId : incomingSender;
+            const partnerId = incomingSender;
             key = `dm-${partnerId}`;
+
+            // Перевіряємо, чи ми зараз дивимось на цей конкретний чат
+            isActiveChat = (viewMode === 'dm' && currentDmUserId == partnerId);
+
+            // Якщо чат не відкритий прямо зараз - вішаємо бейдж
+            if (!isActiveChat) {
+                addUnreadBadge(`contact-${partnerId}`);
+            }
+
         } else if (type === 'guild') {
             key = `guild-${msg.guildId}-chan-${msg.channelId}`;
+
+            isActiveChat = (viewMode === 'guild' && currentGuild?.id == msg.guildId && currentChannel?.id == msg.channelId);
+
+            if (!isActiveChat) {
+                addUnreadBadge(`chan-${msg.channelId}`);
+                // Також ставимо білу крапку на саму гільдію, якщо ми зараз сидимо в іншій
+                if (currentGuild?.id != msg.guildId) {
+                    addUnreadBadge(`guild-icon-${msg.guildId}`, true);
+                }
+            }
         }
 
-        // 3. 🔥 ГОЛОВНИЙ ФІКС ЧАСУ 🔥
-        // Ми ІГНОРУЄМО msg.timestamp від сервера, бо він в UTC і ламає порядок.
-        // Ми завжди ставимо new Date() (час отримання).
-        // Це гарантує, що нове повідомлення ЗАВЖДИ буде знизу.
         const fixedTimestamp = new Date();
-
         const msgObj = {
             id: msg.id || Date.now(),
             sender: msg.sender,
             content: msg.content,
             attachments: msg.attachments,
-            timestamp: fixedTimestamp // <--- Використовуємо наш правильний час
+            timestamp: fixedTimestamp
         };
 
-        // 4. Зберігаємо
         pushMessage(key, msgObj);
         StorageManager.saveMessage(key, msgObj);
 
-        // 5. Оновлюємо екран
-        if (
-            (viewMode === 'dm' && `dm-${currentDmUserId}` === key) ||
-            (viewMode === 'guild' && `guild-${currentGuild?.id}-chan-${currentChannel?.id}` === key)
-        ) {
+        // Оновлюємо екран тільки якщо чат активний
+        if (isActiveChat) {
             renderMessages(key);
-        } else {
-            if(type === 'dm') fetchContacts();
         }
     }
 
