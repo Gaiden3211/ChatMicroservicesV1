@@ -2,6 +2,15 @@ server:
   port: 8085
 
 spring:
+  kafka:
+    bootstrap-servers: kafka:29092 # Адреса всередині докера
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+#        spring.json.use.type.headers: false
+#        spring.json.value.default.type: gaiden.da.notificationservice.dto.UserRegisteredEvent
+        spring.json.trusted.packages: "*" # Довіряємо всім пакетам DTO
   servlet:
     multipart:
       enabled: true
