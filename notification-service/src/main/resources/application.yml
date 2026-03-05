@@ -11,8 +11,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ${MAIL_USERNAME} # Будемо передавати через Docker/Env
-    password: ${MAIL_PASSWORD} # Це має бути "App Password", а не звичайний пароль!
+    username: ${da} # Будемо передавати через Docker/Env
+    password: ${Gd} # Це має бути "App Password", а не звичайний пароль!
     properties:
       mail:
         smtp:
