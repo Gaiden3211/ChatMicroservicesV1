@@ -1837,7 +1837,6 @@
             div.className = 'nav-item';
             div.id = `contact-${uid}`;
 
-            // 🔥 ДОДАНО: Обгортка avatar-wrapper та status-dot
             div.innerHTML = `
             <div class="avatar-wrapper">
                 <div class="nav-item-avatar">?</div>
@@ -1847,6 +1846,12 @@
         `;
             div.onclick = () => selectDM(uid, usersCache[uid]?.username || "User");
             list.appendChild(div);
+
+            // 🔥 ВИНОСИМО ВІДМАЛЬОВКУ БЕЙДЖА СЮДИ (Одразу після створення елемента)
+            const counts = getUnreadCounts();
+            if (counts[`contact-${uid}`]) {
+                renderBadgeUI(`contact-${uid}`, counts[`contact-${uid}`]);
+            }
 
             if(!usersCache[uid]) {
                 try {
@@ -1860,8 +1865,6 @@
             } else {
                 const u = usersCache[uid];
                 updateContactItem(div, u.username, u.avatarUrl);
-                const counts = getUnreadCounts();
-                if (counts[`contact-${uid}`]) renderBadgeUI(`contact-${uid}`, counts[`contact-${uid}`]);
             }
         });
     }
