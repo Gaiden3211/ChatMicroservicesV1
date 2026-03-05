@@ -122,6 +122,7 @@ public class UserService implements UserDetailsService {
     @Caching(evict = {
             @CacheEvict(value = "users", key = "#userId"),
             @CacheEvict(value = "usersByUsername", allEntries = true),
+            @CacheEvict(value = "usersByUsername", allEntries = true),
             @CacheEvict(value = "userCredentials", allEntries = true)
     })
     public void delete(Long userId, Long userIdFromToken) {
@@ -149,6 +150,7 @@ public class UserService implements UserDetailsService {
             @CachePut(value = "users", key = "#userDto.id")
     }, evict = {
             @CacheEvict(value = "usersByUsername", allEntries = true),
+            @CacheEvict(value = "usersByEmail", allEntries = true),
             @CacheEvict(value = "userCredentials", allEntries = true)
     })
     public UserDto changeUserData(UserDto userDto, Long userIdFromToken) {
