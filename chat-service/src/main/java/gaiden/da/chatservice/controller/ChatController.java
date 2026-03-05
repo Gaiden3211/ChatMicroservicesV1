@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gaiden.da.chatservice.config.RedisConfig;
 import gaiden.da.chatservice.dto.AttachmentDto;
 import gaiden.da.chatservice.dto.ChatMessageDto;
+import gaiden.da.chatservice.dto.PushNotificationEvent;
 import gaiden.da.chatservice.entity.ChatMessage;
 import gaiden.da.chatservice.repository.ChatRepository;
 import gaiden.da.chatservice.service.ContactService;
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.kafka.core.KafkaTemplate;
 
 
 import java.security.Principal;
@@ -44,6 +46,7 @@ public class ChatController {
     private final RedisTemplate<String, Object> redisTemplate;
     private final ContactService contactService;
     private final ChatRepository chatRepository;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -163,6 +166,8 @@ public class ChatController {
         contactService.ensureContactExists(senderId, recipientId);
 
 
+        String title = "Нове повідомлення від юзера " + chatMessage.getSender();
+        String body = "У вас нове повідомлення у приватному чаті!";
 
         chatMessage.setSender(senderId);
         chatMessage.setTimestamp(LocalDateTime.now());
@@ -170,6 +175,9 @@ public class ChatController {
 
 
         redisTemplate.convertAndSend(RedisConfig.CHAT_TOPIC, chatMessage);
+        PushNotificationEvent pushEvent = new PushNotificationEvent(chatMessage.getRecipientId(), title, body);
+
+        kafkaTemplate.send("push-notifications", pushEvent);
     }
 
 
