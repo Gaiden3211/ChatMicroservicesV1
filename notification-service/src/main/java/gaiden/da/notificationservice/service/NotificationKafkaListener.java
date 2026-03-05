@@ -19,6 +19,7 @@ public class NotificationKafkaListener {
     private final PushSubscriptionRepository subscriptionRepository;
     private final WebPushService webPushService;
 
+
     // Інжектимо ObjectMapper для ручного парсингу JSON
     private final ObjectMapper objectMapper = new ObjectMapper();
 
