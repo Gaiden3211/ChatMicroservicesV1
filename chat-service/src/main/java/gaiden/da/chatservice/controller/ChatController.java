@@ -177,7 +177,7 @@ public class ChatController {
         redisTemplate.convertAndSend(RedisConfig.CHAT_TOPIC, chatMessage);
         PushNotificationEvent pushEvent = new PushNotificationEvent(chatMessage.getRecipientId(), title, body);
 
-        kafkaTemplate.send("push-notifications", pushEvent);
+        kafkaTemplate.send("push-alerts", pushEvent);
     }
 
 
