@@ -8,17 +8,17 @@ webpush:
     subject: "mailto:evgeniykompaniec2006@gmail.com" # Це вимога стандарту (контакт адміна)
 
 spring:
-  mail:
-    host: smtp.gmail.com
-    port: 587
-    username: ${da} # Будемо передавати через Docker/Env
-    password: ${Gd} # Це має бути "App Password", а не звичайний пароль!
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
+#  mail:
+#    host: smtp.gmail.com
+#    port: 587
+#    username: ${da} # Будемо передавати через Docker/Env
+#    password: ${Gd} # Це має бути "App Password", а не звичайний пароль!
+#    properties:
+#      mail:
+#        smtp:
+#          auth: true
+#          starttls:
+#            enable: true
   datasource:
     hikari:
       # Повинно бути менше, ніж таймаут на Neon (зазвичай 30-60 сек)
