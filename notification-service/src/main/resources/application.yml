@@ -39,12 +39,7 @@ spring:
   kafka:
     bootstrap-servers: kafka:29092 # Адреса всередині докера
     consumer:
-      group-id: notification-group # ID групи (важливо!)
+      group-id: notification-group
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      # Ми будемо передавати JSON, тому використовуємо JsonDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.use.type.headers: false
-        spring.json.value.default.type: gaiden.da.notificationservice.dto.UserRegisteredEvent
-        spring.json.trusted.packages: "*" # Довіряємо всім пакетам DTO
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer

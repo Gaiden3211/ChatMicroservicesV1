@@ -1,4 +1,5 @@
 package gaiden.da.notificationservice.service;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import gaiden.da.notificationservice.dto.PushNotificationEvent;
 import gaiden.da.notificationservice.entity.PushSubscription;
 import gaiden.da.notificationservice.repository.PushSubscriptionRepository;
@@ -18,22 +19,30 @@ public class NotificationKafkaListener {
     private final PushSubscriptionRepository subscriptionRepository;
     private final WebPushService webPushService;
 
-    // Слухаємо топік push-notifications
+    // Інжектимо ObjectMapper для ручного парсингу JSON
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     @KafkaListener(topics = "push-notifications", groupId = "notification-group")
-    public void handlePushEvent(PushNotificationEvent event) {
-        log.info("📨 Received push event for user: {}", event.getRecipientId());
+    public void handlePushEvent(String messageJson) { // 🔥 ПРИЙМАЄМО СТРІНГУ
+        try {
+            // 🔥 РУЧНА ДЕСЕРІАЛІЗАЦІЯ (Найбільш надійний спосіб)
+            PushNotificationEvent event = objectMapper.readValue(messageJson, PushNotificationEvent.class);
 
-        // Дістаємо всі підписки юзера (наприклад, з ПК і з телефона)
-        List<PushSubscription> subscriptions = subscriptionRepository.findAllByUserId(event.getRecipientId());
+            log.info("📨 Received push event for user: {}", event.getRecipientId());
 
-        if (subscriptions.isEmpty()) {
-            log.info("🤷‍♂️ User {} has no push subscriptions.", event.getRecipientId());
-            return;
-        }
+            List<PushSubscription> subscriptions = subscriptionRepository.findAllByUserId(event.getRecipientId());
 
-        // Шлемо пуші на всі його пристрої
-        for (PushSubscription sub : subscriptions) {
-            webPushService.sendPush(sub, event.getTitle(), event.getBody());
+            if (subscriptions.isEmpty()) {
+                log.info("🤷‍♂️ User {} has no push subscriptions.", event.getRecipientId());
+                return;
+            }
+
+            for (PushSubscription sub : subscriptions) {
+                webPushService.sendPush(sub, event.getTitle(), event.getBody());
+            }
+        } catch (Exception e) {
+            log.error("❌ Failed to parse PushNotificationEvent JSON: {}", messageJson, e);
         }
     }
+
 }
