@@ -46,7 +46,7 @@ public class ChatController {
     private final RedisTemplate<String, Object> redisTemplate;
     private final ContactService contactService;
     private final ChatRepository chatRepository;
-    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final KafkaTemplate<Object, Object> kafkaTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
