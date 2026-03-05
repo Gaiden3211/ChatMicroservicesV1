@@ -1,6 +1,12 @@
 server:
   port: 8084
 
+webpush:
+  vapid:
+    public-key: "BAt0Yv_lmLmO723wlUop8HbNakGnUDOjrxHlJhUi5rZgiEdYEnrXEB9cu-mnpCeuobBfRGGBrcwPWVeowH2ZjVs"
+    private-key: "ZsPSlvNyUz8B-mmykTnmBlOBCrX1RwgbJIEe745eYw4"
+    subject: "mailto:evgeniykompaniec2006@gmail.com" # Це вимога стандарту (контакт адміна)
+
 spring:
   mail:
     host: smtp.gmail.com

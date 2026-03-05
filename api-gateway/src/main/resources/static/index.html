@@ -593,6 +593,81 @@
 </div>
 <script>
 
+    const VAPID_PUBLIC_KEY = "BAt0Yv_lmLmO723wlUop8HbNakGnUDOjrxHlJhUi5rZgiEdYEnrXEB9cu-mnpCeuobBfRGGBrcwPWVeowH2ZjVs";
+
+    // Утиліта для Web Push (конвертує Base64 VAPID ключ у Uint8Array)
+    function urlBase64ToUint8Array(base64String) {
+        const padding = '='.repeat((4 - base64String.length % 4) % 4);
+        const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+        const rawData = window.atob(base64);
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+    }
+    async function initWebPush() {
+        // Перевіряємо, чи браузер підтримує Service Workers та Push
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+            console.warn("Push-сповіщення не підтримуються цим браузером.");
+            return;
+        }
+
+        try {
+            // 1. Реєструємо наш sw.js
+            const registration = await navigator.serviceWorker.register('/sw.js');
+            console.log('✅ Service Worker зареєстровано успішно:', registration.scope);
+
+            // 2. Питаємо дозвіл у користувача
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') {
+                console.log("❌ Користувач заборонив сповіщення.");
+                return;
+            }
+
+            // 3. Створюємо підписку (звертаємося до серверів Google/Mozilla)
+            const subscribeOptions = {
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+            };
+
+            // Перевіряємо, чи вже є підписка
+            let subscription = await registration.pushManager.getSubscription();
+            if (!subscription) {
+                console.log("Створюємо нову Push-підписку...");
+                subscription = await registration.pushManager.subscribe(subscribeOptions);
+            }
+
+            console.log("Отримана підписка:", subscription);
+
+            // 4. Відправляємо підписку на наш notification-service
+            await sendSubscriptionToServer(subscription);
+
+        } catch (error) {
+            console.error('Помилка реєстрації Web Push:', error);
+        }
+    }
+
+    async function sendSubscriptionToServer(subscription) {
+        try {
+            const res = await fetch(`${GATEWAY_URL}/api/v1/notifications/subscribe`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': currentToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(subscription) // Об'єкт підписки вже у потрібному форматі!
+            });
+
+            if (res.ok) {
+                console.log("⬆️ Підписка успішно збережена на сервері!");
+            } else {
+                console.error("❌ Не вдалося зберегти підписку на сервері:", res.status);
+            }
+        } catch (e) {
+            console.error("Помилка відправки підписки:", e);
+        }
+    }
 
     // --- UNREAD BADGES LOGIC ---
     function getUnreadCounts() {
@@ -1661,6 +1736,7 @@
         fetchMyGuilds();
         switchToHome();
         loadMyProfile();
+        initWebPush();
     }
 
 

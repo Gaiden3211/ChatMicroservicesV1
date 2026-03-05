@@ -389,6 +389,9 @@ services:
       - SERVER_PORT=8084
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
       - JAVA_TOOL_OPTIONS="-Xmx180m"
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://ep-lively-river-ait3xndk-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require
+      - SPRING_DATASOURCE_USERNAME=neondb_owner
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_DB_NEON_NOTIFICATION_DB}
     deploy:
       resources:
         limits:

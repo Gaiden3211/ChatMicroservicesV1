@@ -100,6 +100,13 @@ spring:
           filters:
             - AuthenticationFilter
 
+        - id: notification-service
+          uri: http://notification-service:8084 # Порт твого сервісу
+          predicates:
+            - Path=/api/v1/notifications/**
+          filters:
+            - AuthenticationFilter
+
 application:
   security:
     jwt:
