@@ -595,36 +595,57 @@
 
 
     // --- UNREAD BADGES LOGIC ---
-    function addUnreadBadge(elementId, isGuild = false) {
+    function getUnreadCounts() {
+        return JSON.parse(localStorage.getItem(`unread_${myUserId}`)) || {};
+    }
+
+    function saveUnreadCounts(counts) {
+        localStorage.setItem(`unread_${myUserId}`, JSON.stringify(counts));
+    }
+
+    // 2. Ця функція суто малює бейдж на екрані (якщо він є в пам'яті)
+    function renderBadgeUI(elementId, count, isGuild = false) {
         const el = document.getElementById(elementId);
         if (!el) return;
 
-        if (isGuild) {
-            el.classList.add('guild-unread');
-        } else {
-            let badge = el.querySelector('.unread-badge');
-            if (!badge) {
-                badge = document.createElement('div');
-                badge.className = 'unread-badge';
-                badge.innerText = '1';
-                el.appendChild(badge);
+        if (count > 0) {
+            if (isGuild) {
+                el.classList.add('guild-unread');
             } else {
-                let count = parseInt(badge.innerText);
-                badge.innerText = count > 98 ? '99+' : count + 1; // Обмеження 99+
+                let badge = el.querySelector('.unread-badge');
+                if (!badge) {
+                    badge = document.createElement('div');
+                    badge.className = 'unread-badge';
+                    el.appendChild(badge);
+                }
+                badge.innerText = count > 98 ? '99+' : count;
+            }
+        } else {
+            if (isGuild) {
+                el.classList.remove('guild-unread');
+            } else {
+                const badge = el.querySelector('.unread-badge');
+                if (badge) badge.remove();
             }
         }
     }
 
-    function clearUnreadBadge(elementId, isGuild = false) {
-        const el = document.getElementById(elementId);
-        if (!el) return;
+    // 3. Викликається при отриманні повідомлення (збільшує лічильник + зберігає)
+    function addUnreadBadge(elementId, isGuild = false) {
+        let counts = getUnreadCounts();
+        counts[elementId] = (counts[elementId] || 0) + 1;
+        saveUnreadCounts(counts);
 
-        if (isGuild) {
-            el.classList.remove('guild-unread');
-        } else {
-            const badge = el.querySelector('.unread-badge');
-            if (badge) badge.remove();
-        }
+        renderBadgeUI(elementId, counts[elementId], isGuild);
+    }
+
+    // 4. Викликається при кліку на чат (обнуляє лічильник + зберігає)
+    function clearUnreadBadge(elementId, isGuild = false) {
+        let counts = getUnreadCounts();
+        delete counts[elementId];
+        saveUnreadCounts(counts);
+
+        renderBadgeUI(elementId, 0, isGuild);
     }
 
 
@@ -1839,6 +1860,8 @@
             } else {
                 const u = usersCache[uid];
                 updateContactItem(div, u.username, u.avatarUrl);
+                const counts = getUnreadCounts();
+                if (counts[`contact-${uid}`]) renderBadgeUI(`contact-${uid}`, counts[`contact-${uid}`]);
             }
         });
     }
@@ -2128,6 +2151,8 @@
             else div.innerText = g.name.substring(0,2).toUpperCase();
 
             list.insertBefore(div, insertPoint);
+            const counts = getUnreadCounts();
+            if (counts[`guild-icon-${g.id}`]) renderBadgeUI(`guild-icon-${g.id}`, counts[`guild-icon-${g.id}`], true);
         });
     }
 
@@ -2146,6 +2171,8 @@
             div.onclick = () => selectChannel(ch.id, ch.name);
             div.innerHTML = `<i class="fas fa-hashtag" style="color:#72767d; margin-right:8px;"></i> ${ch.name}`;
             list.appendChild(div);
+            const counts = getUnreadCounts();
+            if (counts[`chan-${ch.id}`]) renderBadgeUI(`chan-${ch.id}`, counts[`chan-${ch.id}`]);
         });
     }
 
