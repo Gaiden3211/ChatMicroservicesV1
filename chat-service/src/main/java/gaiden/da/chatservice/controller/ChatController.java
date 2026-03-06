@@ -187,15 +187,15 @@ public class ChatController {
     public void handleGuildMessageAction(
             @DestinationVariable String guildId,
             @DestinationVariable String channelId,
-            @Payload MessageActionDto actionDto,
+            @Payload ChatMessageDto actionDto,
             Principal principal
     ) {
         String userIdStr = principal.getName();
-        actionDto.setSenderId(userIdStr);
+        actionDto.setSender(userIdStr);
         actionDto.setGuildId(guildId);
         actionDto.setChannelId(channelId);
 
-        Long msgId = Long.parseLong(actionDto.getMessageId());
+        Long msgId = Long.parseLong(String.valueOf(actionDto.getId()));
 
         chatRepository.findById(msgId).ifPresent(msg -> {
             if (!msg.getSender().equals(userIdStr)) {
@@ -204,7 +204,7 @@ public class ChatController {
             }
 
             if ("EDIT".equals(actionDto.getAction())) {
-                msg.setContent(actionDto.getPayload());
+                msg.setContent(actionDto.getContent());
                 chatRepository.save(msg);
             } else if ("DELETE".equals(actionDto.getAction())) {
                 chatRepository.delete(msg);
@@ -220,11 +220,11 @@ public class ChatController {
 
     @MessageMapping("/private/action")
     public void handlePrivateMessageAction(
-            @Payload MessageActionDto actionDto,
+            @Payload ChatMessageDto actionDto,
             Principal principal
     ) {
         String senderId = principal.getName();
-        actionDto.setSenderId(senderId);
+        actionDto.setSender(senderId);
 
         log.info("📩 Private action {} from User {} to User {}", actionDto.getAction(), senderId, actionDto.getRecipientId());
 

@@ -23,5 +23,6 @@ public class ChatMessageDto {
     private MessageType type;
     private List<AttachmentDto> attachments;
     private LocalDateTime timestamp;
+    private String action;
 
 }
