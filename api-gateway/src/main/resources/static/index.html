@@ -1616,7 +1616,7 @@
     async function sendEditAction(msgId, newText) {
         let finalContent = newText;
 
-        // 🔥 E2EE: Якщо це DM, новий текст теж треба зашифрувати!
+        // E2EE: Якщо це DM, новий текст теж треба зашифрувати!
         if (viewMode === 'dm' && currentDmUserId) {
             const recipientData = await resolveUserData(currentDmUserId);
             if (recipientData.publicKey) {
@@ -1629,6 +1629,7 @@
             messageId: String(msgId),
             action: "EDIT",
             payload: finalContent,
+            senderId: String(myUserId), // 🔥 ОСЬ ЦЬОГО НЕ ВИСТАЧАЛО!
             recipientId: currentDmUserId,
             guildId: currentGuild ? currentGuild.id : null,
             channelId: currentChannel ? currentChannel.id : null
@@ -1641,7 +1642,7 @@
             stompClient.send(`/app/chat/${currentGuild.id}/${currentChannel.id}/action`, {}, JSON.stringify(actionDto));
         }
 
-        // Одразу оновлюємо свій екран (Optimistic UI update)
+        // Одразу оновлюємо свій екран
         await processMessageActionLocally(actionDto);
     }
 
@@ -1652,6 +1653,7 @@
             messageId: String(msgId),
             action: "DELETE",
             payload: null,
+            senderId: String(myUserId), // 🔥 І ТУТ ТАКОЖ!
             recipientId: currentDmUserId,
             guildId: currentGuild ? currentGuild.id : null,
             channelId: currentChannel ? currentChannel.id : null
@@ -1667,43 +1669,45 @@
         await processMessageActionLocally(actionDto);
     }
 
-    // Універсальна обробка: видаляє або змінює повідомлення в оперативній пам'яті і базі
+    // Універсальна обробка
     async function processMessageActionLocally(actionDto) {
         let key = "";
         if (actionDto.recipientId) {
-            // У DMs визначаємо правильний ключ (чи це ми відправили, чи нам)
             const partnerId = (actionDto.senderId === String(myUserId)) ? actionDto.recipientId : actionDto.senderId;
             key = `dm-${partnerId}`;
         } else {
             key = `guild-${actionDto.guildId}-chan-${actionDto.channelId}`;
         }
 
+        console.log("🛠 Processing Action locally. Key:", key, "Action:", actionDto);
+
         let history = chatHistory[key];
-        if (!history) return;
+        if (!history) {
+            console.warn("⚠️ History not found for key:", key);
+            return;
+        }
 
         if (actionDto.action === "DELETE") {
-            // Очищаємо RAM
             chatHistory[key] = history.filter(m => String(m.id) !== String(actionDto.messageId));
-            // Очищаємо IndexedDB
             await StorageManager.deleteMessage(actionDto.messageId);
         }
         else if (actionDto.action === "EDIT") {
             const msg = history.find(m => String(m.id) === String(actionDto.messageId));
             if (msg) {
-                msg.content = actionDto.payload; // Зберігаємо новий шифр або текст
+                msg.content = actionDto.payload;
                 msg.isEdited = true;
                 await StorageManager.updateMessage(actionDto.messageId, actionDto.payload);
+            } else {
+                console.warn("⚠️ Message to edit NOT FOUND in RAM. ID:", actionDto.messageId);
             }
         }
 
-        // Перемальовуємо екран, якщо ми зараз в цьому чаті
+        // Перемальовуємо екран
         if ((viewMode === 'dm' && key === `dm-${currentDmUserId}`) ||
             (viewMode === 'guild' && key === `guild-${currentGuild?.id}-chan-${currentChannel?.id}`)) {
             renderMessages(key);
         }
     }
-
-
     // --- НОВА ФУНКЦІЯ ВІДОБРАЖЕННЯ ---
     async function renderMessages(key) {
         const container = document.getElementById('messagesContainer');
