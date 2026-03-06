@@ -196,7 +196,7 @@ public class ChatController {
         actionDto.setChannelId(channelId);
 
         Long msgId = Long.parseLong(actionDto.getMessageId());
-        
+
         chatRepository.findById(msgId).ifPresent(msg -> {
             if (!msg.getSender().equals(userIdStr)) {
                 log.warn("User {} tried to modify someone else's message {}", userIdStr, msgId);
@@ -217,7 +217,6 @@ public class ChatController {
 
         });
     }
-
 
     @MessageMapping("/private/action")
     public void handlePrivateMessageAction(
