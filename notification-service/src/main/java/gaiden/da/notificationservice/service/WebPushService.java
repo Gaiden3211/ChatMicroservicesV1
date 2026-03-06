@@ -32,18 +32,18 @@ public class WebPushService {
 
     @PostConstruct
     public void init() throws GeneralSecurityException {
-        // Додаємо криптопровайдер для розшифровки VAPID ключів
+
         Security.addProvider(new BouncyCastleProvider());
         pushService = new PushService(publicKey, privateKey, subject);
     }
 
     public void sendPush(PushSubscription sub, String title, String body) {
         try {
-            // Збираємо підписку з нашої БД в об'єкт для бібліотеки
+
             Subscription.Keys keys = new Subscription.Keys(sub.getP256dh(), sub.getAuth());
             Subscription subscription = new Subscription(sub.getEndpoint(), keys);
 
-            // Формуємо JSON, який чекає наш sw.js на фронтенді
+
             Map<String, String> payloadMap = new HashMap<>();
             payloadMap.put("title", title);
             payloadMap.put("body", body);
@@ -51,7 +51,7 @@ public class WebPushService {
 
             String payload = objectMapper.writeValueAsString(payloadMap);
 
-            // Відправляємо!
+
             Notification notification = new Notification(subscription, payload);
             pushService.send(notification);
             log.info("🚀 Push notification sent successfully to endpoint: {}", sub.getEndpoint());

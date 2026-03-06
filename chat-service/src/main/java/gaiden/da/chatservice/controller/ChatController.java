@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gaiden.da.chatservice.config.RedisConfig;
 import gaiden.da.chatservice.dto.AttachmentDto;
 import gaiden.da.chatservice.dto.ChatMessageDto;
+import gaiden.da.chatservice.dto.MessageActionDto;
 import gaiden.da.chatservice.dto.PushNotificationEvent;
 import gaiden.da.chatservice.entity.ChatMessage;
 import gaiden.da.chatservice.repository.ChatRepository;
@@ -182,7 +183,54 @@ public class ChatController {
 
 
 
+    @MessageMapping("/chat/{guildId}/{channelId}/action")
+    public void handleGuildMessageAction(
+            @DestinationVariable String guildId,
+            @DestinationVariable String channelId,
+            @Payload MessageActionDto actionDto,
+            Principal principal
+    ) {
+        String userIdStr = principal.getName();
+        actionDto.setSenderId(userIdStr);
+        actionDto.setGuildId(guildId);
+        actionDto.setChannelId(channelId);
 
+        Long msgId = Long.parseLong(actionDto.getMessageId());
+        
+        chatRepository.findById(msgId).ifPresent(msg -> {
+            if (!msg.getSender().equals(userIdStr)) {
+                log.warn("User {} tried to modify someone else's message {}", userIdStr, msgId);
+                return;
+            }
+
+            if ("EDIT".equals(actionDto.getAction())) {
+                msg.setContent(actionDto.getPayload());
+                chatRepository.save(msg);
+            } else if ("DELETE".equals(actionDto.getAction())) {
+                chatRepository.delete(msg);
+            }
+
+
+            String destination = String.format("/topic/guild/%s/channel/%s/actions", guildId, channelId);
+            redisTemplate.convertAndSend(RedisConfig.CHAT_TOPIC, actionDto);
+
+
+        });
+    }
+
+
+    @MessageMapping("/private/action")
+    public void handlePrivateMessageAction(
+            @Payload MessageActionDto actionDto,
+            Principal principal
+    ) {
+        String senderId = principal.getName();
+        actionDto.setSenderId(senderId);
+
+        log.info("📩 Private action {} from User {} to User {}", actionDto.getAction(), senderId, actionDto.getRecipientId());
+
+       redisTemplate.convertAndSend(RedisConfig.CHAT_TOPIC, actionDto);
+    }
 
 
 }

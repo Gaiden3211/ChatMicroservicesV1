@@ -21,13 +21,12 @@ public class NotificationKafkaListener {
 
 
 
-    // Інжектимо ObjectMapper для ручного парсингу JSON
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @KafkaListener(topics = "push-alerts", groupId = "notification-group-v2")
-    public void handlePushEvent(String messageJson) { // 🔥 ПРИЙМАЄМО СТРІНГУ
+    public void handlePushEvent(String messageJson) {
         try {
-            // 🔥 РУЧНА ДЕСЕРІАЛІЗАЦІЯ (Найбільш надійний спосіб)
+
             PushNotificationEvent event = objectMapper.readValue(messageJson, PushNotificationEvent.class);
 
             log.info("📨 Received push event for user: {}", event.getRecipientId());

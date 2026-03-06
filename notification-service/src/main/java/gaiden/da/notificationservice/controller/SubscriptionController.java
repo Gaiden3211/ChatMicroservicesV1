@@ -23,7 +23,7 @@ public class SubscriptionController {
 
         log.info("📩 New push subscription received for user: {}", userId);
 
-        // Перевіряємо, чи немає вже такої підписки
+
         if (subscriptionRepository.findByEndpoint(request.getEndpoint()).isEmpty()) {
             PushSubscription sub = new PushSubscription();
             sub.setUserId(userId.toString());

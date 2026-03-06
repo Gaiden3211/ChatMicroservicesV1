@@ -391,6 +391,37 @@
             border-radius: 4px;
         }
 
+        /* --- MESSAGE ACTIONS (EDIT / DELETE) --- */
+        .message { position: relative; padding-right: 50px; }
+        .msg-actions {
+            display: none;
+            position: absolute;
+            right: 20px;
+            top: -10px;
+            background: var(--bg-tertiary);
+            padding: 2px 5px;
+            border-radius: 4px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+            border: 1px solid var(--bg-dark);
+            z-index: 10;
+        }
+        .message:hover .msg-actions { display: flex; gap: 5px; }
+
+        .msg-action-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 5px 8px;
+            border-radius: 3px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .msg-action-btn:hover { background: var(--bg-secondary); color: var(--text-normal); }
+        .msg-action-btn.delete-btn:hover { color: #ed4245; }
+
+        .edited-tag { font-size: 11px; color: var(--text-muted); margin-left: 5px; font-style: italic; }
+
     </style>
 </head>
 <body>
@@ -1142,6 +1173,40 @@
 
 
     const StorageManager = {
+
+        async updateMessage(messageId, newContent) {
+            const db = await this.getDB();
+            return new Promise((resolve) => {
+                const tx = db.transaction("messages", "readwrite");
+                const store = tx.objectStore("messages");
+
+                // Шукаємо повідомлення за ID
+                const req = store.get(messageId);
+                req.onsuccess = () => {
+                    const msg = req.result;
+                    if (msg) {
+                        msg.content = newContent; // Оновлюємо текст (зашифрований або ні)
+                        msg.isEdited = true;      // Ставимо позначку
+                        store.put(msg);           // Зберігаємо назад
+                        resolve(true);
+                    } else {
+                        resolve(false);
+                    }
+                };
+            });
+        },
+
+        // 🔥 НОВЕ: Видалити повідомлення локально
+        async deleteMessage(messageId) {
+            const db = await this.getDB();
+            return new Promise((resolve) => {
+                const tx = db.transaction("messages", "readwrite");
+                const store = tx.objectStore("messages");
+                store.delete(messageId);
+                tx.oncomplete = () => resolve(true);
+            });
+        },
+
         getDB() {
             return new Promise((resolve, reject) => {
                 const req = indexedDB.open("SecureChatDB", 3
@@ -1548,6 +1613,105 @@
 
     // Замість let userNamesCache = {}; використовуємо це:
 
+    // --- ACTIONS: EDIT / DELETE ---
+
+    async function initEditMessage(msgId, oldText) {
+        const newText = prompt("Edit message:", oldText);
+        if (newText !== null && newText.trim() !== "" && newText !== oldText) {
+            await sendEditAction(msgId, newText.trim());
+        }
+    }
+
+    async function sendEditAction(msgId, newText) {
+        let finalContent = newText;
+
+        // 🔥 E2EE: Якщо це DM, новий текст теж треба зашифрувати!
+        if (viewMode === 'dm' && currentDmUserId) {
+            const recipientData = await resolveUserData(currentDmUserId);
+            if (recipientData.publicKey) {
+                const encrypted = await CryptoManager.encryptMessage(newText, recipientData.publicKey, myPublicKey);
+                if (encrypted) finalContent = encrypted;
+            }
+        }
+
+        const actionDto = {
+            messageId: String(msgId),
+            action: "EDIT",
+            payload: finalContent,
+            recipientId: currentDmUserId,
+            guildId: currentGuild ? currentGuild.id : null,
+            channelId: currentChannel ? currentChannel.id : null
+        };
+
+        // Відправляємо по вебсокету
+        if (viewMode === 'dm') {
+            stompClient.send("/app/private/action", {}, JSON.stringify(actionDto));
+        } else {
+            stompClient.send(`/app/chat/${currentGuild.id}/${currentChannel.id}/action`, {}, JSON.stringify(actionDto));
+        }
+
+        // Одразу оновлюємо свій екран (Optimistic UI update)
+        await processMessageActionLocally(actionDto);
+    }
+
+    async function sendDeleteAction(msgId) {
+        if (!confirm("Are you sure you want to delete this message?")) return;
+
+        const actionDto = {
+            messageId: String(msgId),
+            action: "DELETE",
+            payload: null,
+            recipientId: currentDmUserId,
+            guildId: currentGuild ? currentGuild.id : null,
+            channelId: currentChannel ? currentChannel.id : null
+        };
+
+        if (viewMode === 'dm') {
+            stompClient.send("/app/private/action", {}, JSON.stringify(actionDto));
+        } else {
+            stompClient.send(`/app/chat/${currentGuild.id}/${currentChannel.id}/action`, {}, JSON.stringify(actionDto));
+        }
+
+        // Локальне оновлення
+        await processMessageActionLocally(actionDto);
+    }
+
+    // Універсальна обробка: видаляє або змінює повідомлення в оперативній пам'яті і базі
+    async function processMessageActionLocally(actionDto) {
+        let key = "";
+        if (actionDto.recipientId) {
+            // У DMs визначаємо правильний ключ (чи це ми відправили, чи нам)
+            const partnerId = (actionDto.senderId === String(myUserId)) ? actionDto.recipientId : actionDto.senderId;
+            key = `dm-${partnerId}`;
+        } else {
+            key = `guild-${actionDto.guildId}-chan-${actionDto.channelId}`;
+        }
+
+        let history = chatHistory[key];
+        if (!history) return;
+
+        if (actionDto.action === "DELETE") {
+            // Очищаємо RAM
+            chatHistory[key] = history.filter(m => String(m.id) !== String(actionDto.messageId));
+            // Очищаємо IndexedDB
+            await StorageManager.deleteMessage(actionDto.messageId);
+        }
+        else if (actionDto.action === "EDIT") {
+            const msg = history.find(m => String(m.id) === String(actionDto.messageId));
+            if (msg) {
+                msg.content = actionDto.payload; // Зберігаємо новий шифр або текст
+                msg.isEdited = true;
+                await StorageManager.updateMessage(actionDto.messageId, actionDto.payload);
+            }
+        }
+
+        // Перемальовуємо екран, якщо ми зараз в цьому чаті
+        if ((viewMode === 'dm' && key === `dm-${currentDmUserId}`) ||
+            (viewMode === 'guild' && key === `guild-${currentGuild?.id}-chan-${currentChannel?.id}`)) {
+            renderMessages(key);
+        }
+    }
+
 
     // --- НОВА ФУНКЦІЯ ВІДОБРАЖЕННЯ ---
     async function renderMessages(key) {
@@ -1557,8 +1721,7 @@
         // Отримуємо повідомлення
         let msgs = chatHistory[key] || [];
 
-        // 🔥 ФІКС ТУТ: Сортуємо їх за часом перед тим як малювати
-        // Це гарантує, що вони завжди будуть по порядку, незалежно від того, як прийшли
+        // Сортуємо їх за часом
         msgs.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
         // Прокрутка вниз
@@ -1587,24 +1750,18 @@
                 avatarUrl = userData ? userData.avatarUrl : null;
             }
 
-            // --- 🔥 E2EE ДЕШИФРУВАННЯ (З ОБРОБКОЮ ПОМИЛОК) ---
+            // --- E2EE ДЕШИФРУВАННЯ ---
             let contentToShow = m.content;
 
             if (viewMode === 'dm' && contentToShow && contentToShow.startsWith('{')) {
                 if (typeof myPrivateKey !== 'undefined' && myPrivateKey) {
                     try {
-                        // Пробуємо розшифрувати
                         const decrypted = await CryptoManager.decryptMessage(m.content, myPrivateKey, isMe);
-
-                        // Перевіряємо, чи не повернулась помилка текстом
                         if (!decrypted.startsWith("🔒")) {
                             contentToShow = decrypted;
                         } else {
-                            // Якщо не вийшло - показуємо червоний замочок, але НЕ КРАШИМОСЬ
                             console.warn("Decryption failed for msg", m.id);
-                            contentToShow = `<span style="color:#ed4245; font-style:italic; font-size: 12px;">
-                                <i class="fas fa-lock"></i> Помилка дешифрування (старий ключ)
-                            </span>`;
+                            contentToShow = `<span style="color:#ed4245; font-style:italic; font-size: 12px;"><i class="fas fa-lock"></i> Помилка дешифрування (старий ключ)</span>`;
                         }
                     } catch (e) {
                         console.error("Critical decryption crash:", e);
@@ -1614,27 +1771,33 @@
                     contentToShow = "🔒 Waiting for keys...";
                 }
             }
-            // -----------------------------------------------------
 
+            // МАЛЮЄМО АВАТАР
             let avatarHtml = "";
             if (avatarUrl) {
                 avatarHtml = `<div class="nav-item-avatar" style="min-width:40px; height:40px; border-radius:50%; background-image: url('${avatarUrl}'); background-size: cover; background-position: center; margin-right:15px;"></div>`;
             } else {
-                avatarHtml = `<div class="nav-item-avatar" style="min-width:40px; height:40px; border-radius:50%; background:${isMe?'#faa61a':'#5865f2'}; display:flex; align-items:center; justify-content:center; margin-right:15px; color:white; font-weight:bold;">
-                ${displayName.substring(0,2).toUpperCase()}
-            </div>`;
+                avatarHtml = `<div class="nav-item-avatar" style="min-width:40px; height:40px; border-radius:50%; background:${isMe?'#faa61a':'#5865f2'}; display:flex; align-items:center; justify-content:center; margin-right:15px; color:white; font-weight:bold;">${displayName.substring(0,2).toUpperCase()}</div>`;
             }
 
+            // МАЛЮЄМО ТІЛО ПОВІДОМЛЕННЯ
             let htmlBody = "";
+
             // Якщо це наш HTML з помилкою - вставляємо як є, інакше текст
             if (contentToShow.includes("<span")) {
-                htmlBody += `<div style="color:#dcddde;">${contentToShow}</div>`;
+                htmlBody += `<span style="color:#dcddde;">${contentToShow}</span>`;
             } else {
-                htmlBody += `<div style="color:#dcddde; white-space:pre-wrap;">${contentToShow}</div>`;
+                // Захист від XSS (екранування тексту)
+                const safeText = contentToShow.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                htmlBody += `<span style="color:#dcddde; white-space:pre-wrap;">${safeText}</span>`;
             }
 
-            // ... (Вкладення - залишаються як були) ...
-            // ... (Вкладення - залишаються як були) ...
+            // Додаємо позначку (edited)
+            if (m.isEdited) {
+                htmlBody += `<span class="edited-tag">(edited)</span>`;
+            }
+
+            // Вкладення
             if (m.attachments && m.attachments.length > 0) {
                 htmlBody += `<div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:5px;">`;
                 m.attachments.forEach(att => {
@@ -1649,24 +1812,36 @@
                 htmlBody += `</div>`;
             }
 
-            // 🔥 БЕЗПЕЧНА ОБРОБКА ЧАСУ 🔥
+            // ЧАС ПОВІДОМЛЕННЯ
             let msgTime = m.timestamp;
-            if (typeof msgTime === 'string' && !msgTime.endsWith('Z')) {
-                msgTime += 'Z'; // Додаємо Z тільки якщо це рядок з сервера
-            }
+            if (typeof msgTime === 'string' && !msgTime.endsWith('Z')) msgTime += 'Z';
             const displayTimeString = new Date(msgTime).toLocaleTimeString();
 
-            // ЗБИРАЄМО HTML
+            // ДОДАЄМО КНОПКИ ДІЙ ТІЛЬКИ ДЛЯ СВОЇХ ПОВІДОМЛЕНЬ
+            let actionsHtml = "";
+            if (isMe) {
+                const escapedText = contentToShow.replace(/'/g, "&apos;").replace(/"/g, "&quot;");
+                actionsHtml = `
+                <div class="msg-actions">
+                    <button class="msg-action-btn" title="Edit" onclick="initEditMessage('${m.id}', '${escapedText}')"><i class="fas fa-pen"></i></button>
+                    <button class="msg-action-btn delete-btn" title="Delete" onclick="sendDeleteAction('${m.id}')"><i class="fas fa-trash"></i></button>
+                </div>`;
+            }
+
+            // ФІНАЛЬНИЙ HTML ЗБІРКА РЯДКА
             div.innerHTML = `
             ${avatarHtml}
-            <div>
+            <div style="flex: 1; min-width: 0;">
                 <div style="color:white; font-weight:bold; font-size:15px; margin-bottom:5px;">
                     ${displayName} <span style="font-size:12px; color:#72767d; margin-left:5px;">${displayTimeString}</span>
                 </div>
-                ${htmlBody}
-            </div>`;
+                <div>${htmlBody}</div>
+            </div>
+            ${actionsHtml}`;
+
             container.appendChild(div);
         }
+
         container.scrollTop = container.scrollHeight;
     }
 
@@ -2088,6 +2263,11 @@
 
     function handleIncomingMessage(msg, type) {
         console.log("📨 [WS INCOMING]", msg);
+
+        if (msg.action) {
+            processMessageActionLocally(msg);
+            return;
+        }
 
         const incomingSender = String(msg.sender);
         const myId = String(myUserId);
