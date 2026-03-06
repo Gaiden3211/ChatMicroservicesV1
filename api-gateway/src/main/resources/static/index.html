@@ -1180,29 +1180,42 @@
                 const tx = db.transaction("messages", "readwrite");
                 const store = tx.objectStore("messages");
 
-                // Шукаємо повідомлення за ID
-                const req = store.get(messageId);
+                // Шукаємо як строку, а якщо немає - як число
+                let req = store.get(String(messageId));
+
                 req.onsuccess = () => {
-                    const msg = req.result;
-                    if (msg) {
-                        msg.content = newContent; // Оновлюємо текст (зашифрований або ні)
-                        msg.isEdited = true;      // Ставимо позначку
-                        store.put(msg);           // Зберігаємо назад
-                        resolve(true);
+                    let msg = req.result;
+                    if (!msg) {
+                        // Фолбек для старих повідомлень, які збереглися як числа
+                        req = store.get(Number(messageId));
+                        req.onsuccess = () => {
+                            if (req.result) updateAndSave(req.result, store, resolve, newContent);
+                            else resolve(false);
+                        }
                     } else {
-                        resolve(false);
+                        updateAndSave(msg, store, resolve, newContent);
                     }
                 };
+
+                function updateAndSave(m, st, res, content) {
+                    m.content = content;
+                    m.isEdited = true;
+                    st.put(m);
+                    res(true);
+                }
             });
         },
 
-        // 🔥 НОВЕ: Видалити повідомлення локально
         async deleteMessage(messageId) {
             const db = await this.getDB();
             return new Promise((resolve) => {
                 const tx = db.transaction("messages", "readwrite");
                 const store = tx.objectStore("messages");
-                store.delete(messageId);
+
+                // Видаляємо обидва варіанти (строку і число) для надійності
+                store.delete(String(messageId));
+                store.delete(Number(messageId));
+
                 tx.oncomplete = () => resolve(true);
             });
         },
@@ -1474,8 +1487,6 @@
 
     function handleEnter(e) { if(e.key === 'Enter') sendMessage(); }
 
-    // --- НОВА ФУНКЦІЯ ВІДПРАВКИ ---
-    // --- НОВА ФУНКЦІЯ ВІДПРАВКИ ---
     async function sendMessage() {
         const input = document.getElementById('messageInput');
         const text = input.value.trim();
@@ -1515,7 +1526,7 @@
         // 2. Визначаємо тип повідомлення
         let msgType = uploadedAttachments.length > 0 ? uploadedAttachments[0].type : 'TEXT';
 
-        // --- 🔥 E2EE ШИФРУВАННЯ ---
+        // --- E2EE ШИФРУВАННЯ ---
         let finalContent = text;
 
         // Шифруємо тільки приватні повідомлення (DM) і якщо є текст
@@ -1524,10 +1535,7 @@
 
             if (recipientData.publicKey) {
                 console.log("🔒 Encrypting message for both...");
-
-                // Шифруємо (для друга + для себе)
                 const encrypted = await CryptoManager.encryptMessage(text, recipientData.publicKey, myPublicKey);
-
                 if (encrypted) {
                     finalContent = encrypted; // Це JSON-рядок з шифром
                 }
@@ -1537,8 +1545,12 @@
         }
         // ---------------------------
 
-        // 3. Формуємо об'єкт для WebSocket (Тут content ЗАШИФРОВАНИЙ)
+        // 🔥 ГЕНЕРУЄМО ЄДИНИЙ ID (і робимо його строкою), який буде спільним для обох юзерів у DM
+        const tempId = Date.now().toString() + Math.floor(Math.random() * 1000);
+
+        // 3. Формуємо об'єкт для WebSocket
         let wsMsg = {
+            id: tempId, // 🔥 ТЕПЕР МИ ПЕРЕДАЄМО ID НА СЕРВЕР!
             content: finalContent,
             attachments: uploadedAttachments,
             type: msgType,
@@ -1554,25 +1566,19 @@
             // А. Відправляємо на сервер (шифр)
             stompClient.send("/app/private/message", {}, JSON.stringify(wsMsg));
 
-            const tempId = Date.now(); // Тимчасовий ID
-
-            // Б. 🔥 ЗБЕРІГАЄМО В БАЗУ (IndexedDB) -> ЗАШИФРОВАНЕ
-            // Ми беремо wsMsg, де content - це шифр.
+            // Б. ЗБЕРІГАЄМО В БАЗУ (IndexedDB) -> ЗАШИФРОВАНЕ
             const msgForDb = {
                 ...wsMsg,
-                id: tempId,
-                sender: "Me",
+                sender: String(myUserId), // Ставимо свій справжній ID
                 timestamp: new Date()
             };
             StorageManager.saveMessage(key, msgForDb);
 
-            // В. 🔥 ПОКАЗУЄМО НА ЕКРАНІ -> РОЗШИФРОВАНЕ (ТЕКСТ)
-            // Ми створюємо окремий об'єкт для відображення "прямо зараз"
+            // В. ПОКАЗУЄМО НА ЕКРАНІ -> РОЗШИФРОВАНЕ (ТЕКСТ)
             const msgForUi = {
                 ...wsMsg,
                 content: text, // Підміняємо шифр на текст, щоб не чекати розшифровки
-                id: tempId,
-                sender: "Me",
+                sender: String(myUserId),
                 timestamp: new Date()
             };
 
@@ -1580,26 +1586,11 @@
             renderMessages(key);
 
         } else if (viewMode === 'guild' && currentGuild && currentChannel) {
+            // Для гільдій просто відправляємо.
+            // Ми БІЛЬШЕ НЕ додаємо його в UI вручну тут.
+            // Чекаємо, поки сервер збереже його в БД і поверне нам через WebSocket із справжнім ID.
             const dest = `/app/chat/${currentGuild.id}/${currentChannel.id}/sendMessage`;
             stompClient.send(dest, {}, JSON.stringify(wsMsg));
-
-            // 🔥 ВИПРАВЛЕННЯ: Додаємо повідомлення собі локально ВІДРАЗУ
-            // Щоб не чекати, поки сервер поверне його (бо ми ігноруємо своє ж повідомлення в handleIncomingMessage)
-
-            const tempKey = `guild-${currentGuild.id}-chan-${currentChannel.id}`;
-
-            const msgForUi = {
-                ...wsMsg,
-                id: Date.now(), // Тимчасовий ID
-                sender: myUserId, // Або "Me", залежно від того, як ти рендериш
-                timestamp: new Date()
-            };
-
-            // Додаємо в історію
-            pushMessage(tempKey, msgForUi);
-
-            // Малюємо
-            renderMessages(tempKey);
         }
 
         // 5. Очищаємо
@@ -2264,6 +2255,7 @@
     function handleIncomingMessage(msg, type) {
         console.log("📨 [WS INCOMING]", msg);
 
+        // Якщо це дія над існуючим повідомленням (редагування/видалення)
         if (msg.action) {
             processMessageActionLocally(msg);
             return;
@@ -2272,9 +2264,12 @@
         const incomingSender = String(msg.sender);
         const myId = String(myUserId);
 
-        if (incomingSender === myId || msg.sender === "Me") {
-            return; // Ігноруємо свої ж повідомлення
+        // 🔥 ОНОВЛЕНА ЛОГІКА ВІДЛУННЯ (Echo Cancellation)
+        if (type === 'dm' && (incomingSender === myId || incomingSender === "Me")) {
+            return; // У DMs ігноруємо свої повідомлення (ми вже їх намалювали самі під час відправки)
         }
+        // У Гільдіях ми ПРОПУСКАЄМО свої повідомлення далі,
+        // щоб вони намалювалися з реальним ID від бази даних!
 
         let key = "";
         let isActiveChat = false;
@@ -2296,9 +2291,9 @@
 
             isActiveChat = (viewMode === 'guild' && currentGuild?.id == msg.guildId && currentChannel?.id == msg.channelId);
 
-            if (!isActiveChat) {
+            // Якщо це не наше повідомлення і ми не в цьому чаті - вішаємо бейдж
+            if (incomingSender !== myId && !isActiveChat) {
                 addUnreadBadge(`chan-${msg.channelId}`);
-                // Також ставимо білу крапку на саму гільдію, якщо ми зараз сидимо в іншій
                 if (currentGuild?.id != msg.guildId) {
                     addUnreadBadge(`guild-icon-${msg.guildId}`, true);
                 }
@@ -2307,7 +2302,7 @@
 
         const fixedTimestamp = new Date();
         const msgObj = {
-            id: msg.id || Date.now(),
+            id: msg.id ? String(msg.id) : Date.now().toString(), // 🔥 ЗАВЖДИ СТРІНГА
             sender: msg.sender,
             content: msg.content,
             attachments: msg.attachments,
@@ -2315,7 +2310,12 @@
         };
 
         pushMessage(key, msgObj);
-        StorageManager.saveMessage(key, msgObj);
+
+        // Зберігаємо в IndexedDB тільки DMs (бо гільдійні лежать на бекенді,
+        // але якщо ти кешуєш і гільдійні локально, залиш цей виклик для обох)
+        if (type === 'dm') {
+            StorageManager.saveMessage(key, msgObj);
+        }
 
         // Оновлюємо екран тільки якщо чат активний
         if (isActiveChat) {
