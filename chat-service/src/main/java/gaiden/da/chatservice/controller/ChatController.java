@@ -33,7 +33,10 @@ import org.springframework.kafka.core.KafkaTemplate;
 
 import java.security.Principal;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Controller
@@ -208,6 +211,33 @@ public class ChatController {
                 chatRepository.save(msg);
             } else if ("DELETE".equals(actionDto.getAction())) {
                 chatRepository.delete(msg);
+            } else  if ("REACT".equals(actionDto.getAction())) {
+                String emoji = actionDto.getContent();
+                String currentReactions = msg.getReactions();
+                if (currentReactions == null || currentReactions.isEmpty()) {
+                    currentReactions = "{}";
+                }
+
+                try {
+                    Map<String, Set<String>> reactionMap = objectMapper.readValue(currentReactions, new TypeReference<Map<String, Set<String>>>() {});
+
+                    Set<String> users = reactionMap.computeIfAbsent(emoji, k -> new HashSet<>());
+
+                    if (users.contains(userIdStr)) {
+                        users.remove(userIdStr);
+                        if (!users.isEmpty()) reactionMap.remove(emoji);
+                    } else {
+                        users.add(userIdStr);
+                    }
+
+                    msg.setReactions(objectMapper.writeValueAsString(reactionMap));
+                    chatRepository.save(msg);
+
+                    actionDto.setReactions(msg.getReactions());
+                } catch (Exception e) {
+                    log.error("Failed to deserialize reactions for msg {}", msg.getId(), e);
+                }
+
             }
 
 

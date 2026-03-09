@@ -39,4 +39,7 @@ public class ChatMessage {
 
      @Column(columnDefinition = "TEXT")
      private String attachments;
+
+    @Column(columnDefinition = "TEXT")
+    private String reactions;
 }

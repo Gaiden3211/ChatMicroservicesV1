@@ -422,6 +422,27 @@
 
         .edited-tag { font-size: 11px; color: var(--text-muted); margin-left: 5px; font-style: italic; }
 
+
+        /* --- REACTIONS STYLES --- */
+        .reactions-bar { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+        .reaction-pill {
+            background: var(--bg-secondary); border: 1px solid transparent;
+            border-radius: 6px; padding: 2px 6px; font-size: 13px; cursor: pointer;
+            display: flex; align-items: center; gap: 4px; color: var(--text-muted);
+            user-select: none; transition: 0.1s;
+        }
+        .reaction-pill:hover { border-color: #5865f2; }
+        .reaction-pill.reacted { background: rgba(88, 101, 242, 0.15); border-color: #5865f2; color: #5865f2; }
+
+        .emoji-picker-container { position: relative; display: inline-block; }
+        .emoji-picker-menu {
+            display: none; position: absolute; right: 0; top: 25px; background: var(--bg-tertiary);
+            border-radius: 4px; padding: 5px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); z-index: 100;
+            white-space: nowrap; border: 1px solid var(--bg-dark);
+        }
+        .emoji-picker-container:hover .emoji-picker-menu { display: flex; gap: 5px; }
+        .emoji-btn { background: none; border: none; font-size: 16px; cursor: pointer; padding: 4px; transition: transform 0.1s; }
+        .emoji-btn:hover { transform: scale(1.2); }
     </style>
 </head>
 <body>
@@ -1613,6 +1634,28 @@
         }
     }
 
+    async function sendReactionAction(msgId, emoji) {
+        const actionDto = {
+            id: String(msgId),
+            action: "REACT",
+            content: emoji, // Передаємо сам смайл
+            sender: String(myUserId),
+            recipientId: currentDmUserId,
+            guildId: currentGuild ? currentGuild.id : null,
+            channelId: currentChannel ? currentChannel.id : null
+        };
+
+        if (viewMode === 'dm') {
+            stompClient.send("/app/private/action", {}, JSON.stringify(actionDto));
+            // У DMs сервер не має БД, тому ми оновлюємо локально одразу
+            await processMessageActionLocally(actionDto);
+        } else {
+            stompClient.send(`/app/chat/${currentGuild.id}/${currentChannel.id}/action`, {}, JSON.stringify(actionDto));
+            // У гільдіях сервер сам порахує реакції і поверне нам оновлений DTO
+            // Тому тут processMessageActionLocally(actionDto) не викликаємо, чекаємо відповіді!
+        }
+    }
+
     async function sendEditAction(msgId, newText) {
         let finalContent = newText;
 
@@ -1666,34 +1709,82 @@
     async function processMessageActionLocally(actionDto) {
         let key = "";
         if (actionDto.recipientId) {
-            // 🔥 Тепер перевіряємо actionDto.sender замість senderId
             const partnerId = (actionDto.sender === String(myUserId)) ? actionDto.recipientId : actionDto.sender;
             key = `dm-${partnerId}`;
         } else {
             key = `guild-${actionDto.guildId}-chan-${actionDto.channelId}`;
         }
 
-        console.log("🛠 Processing Action locally. Key:", key, "Action:", actionDto);
-
-        // 🔥 Тепер використовуємо actionDto.id та actionDto.content
-        if (actionDto.action === "DELETE") {
-            await StorageManager.deleteMessage(actionDto.id);
-        } else if (actionDto.action === "EDIT") {
-            await StorageManager.updateMessage(actionDto.id, actionDto.content);
-        }
-
         let history = chatHistory[key];
+
+        // 1. Оновлюємо IndexedDB
+        const db = await StorageManager.getDB();
+        const tx = db.transaction("messages", "readwrite");
+        const store = tx.objectStore("messages");
+
+        const modifyMsg = (msg) => {
+            if (actionDto.action === "DELETE") {
+                return null; // Означає видалити
+            } else if (actionDto.action === "EDIT") {
+                msg.content = actionDto.content;
+                msg.isEdited = true;
+            } else if (actionDto.action === "REACT") {
+                // Якщо сервер прислав вже готову JSON стрічку (Гільдії)
+                if (actionDto.reactions) {
+                    msg.reactions = actionDto.reactions;
+                } else {
+                    // Якщо ми самі рахуємо локально (DMs)
+                    let rMap = typeof msg.reactions === 'string' ? JSON.parse(msg.reactions || "{}") : (msg.reactions || {});
+                    let users = rMap[actionDto.content] || [];
+                    const sender = String(actionDto.sender);
+
+                    if (users.includes(sender)) {
+                        users = users.filter(u => u !== sender); // Видаляємо свій лайк
+                        if (users.length === 0) delete rMap[actionDto.content];
+                        else rMap[actionDto.content] = users;
+                    } else {
+                        users.push(sender); // Додаємо свій лайк
+                        rMap[actionDto.content] = users;
+                    }
+                    msg.reactions = rMap;
+                }
+            }
+            return msg;
+        };
+
+        // Читаємо і записуємо в БД
+        let reqStr = store.get(String(actionDto.id));
+        reqStr.onsuccess = () => {
+            let msg = reqStr.result || null;
+            if (!msg) {
+                // Фолбек для старих числових ID
+                let reqNum = store.get(Number(actionDto.id));
+                reqNum.onsuccess = () => {
+                    if (reqNum.result) processAndSave(reqNum.result);
+                };
+            } else {
+                processAndSave(msg);
+            }
+
+            function processAndSave(m) {
+                const updated = modifyMsg(m);
+                if (updated === null) store.delete(m.id);
+                else store.put(updated);
+            }
+        };
+
+        // 2. Оновлюємо оперативну пам'ять
         if (history) {
             if (actionDto.action === "DELETE") {
                 chatHistory[key] = history.filter(m => String(m.id) !== String(actionDto.id));
-            } else if (actionDto.action === "EDIT") {
+            } else {
                 const msg = history.find(m => String(m.id) === String(actionDto.id));
                 if (msg) {
-                    msg.content = actionDto.content;
-                    msg.isEdited = true;
+                    modifyMsg(msg); // Оновлюємо об'єкт у пам'яті за посиланням
                 }
             }
 
+            // Перемальовуємо
             if ((viewMode === 'dm' && key === `dm-${currentDmUserId}`) ||
                 (viewMode === 'guild' && key === `guild-${currentGuild?.id}-chan-${currentChannel?.id}`)) {
                 renderMessages(key);
@@ -1720,27 +1811,32 @@
 
             const senderIdStr = String(m.sender);
             const myIdStr = String(myUserId);
+            // Перевірка, чи це моє повідомлення (сервер може повернути "Me" або мій ID)
             const isMe = senderIdStr === myIdStr || m.sender === "Me";
 
             let displayName = "Loading...";
             let avatarUrl = null;
 
             if (isMe) {
+                // Беремо дані з футера
                 displayName = document.getElementById('my-username').innerText || "Me";
                 const myFooterAvatar = document.getElementById('my-avatar');
                 if (myFooterAvatar && myFooterAvatar.style.backgroundImage && myFooterAvatar.style.backgroundImage !== 'none') {
+                    // backgroundImage виглядає як url("...url..."), прибираємо зайве
                     avatarUrl = myFooterAvatar.style.backgroundImage.slice(5, -2);
                 }
             } else {
+                // Беремо дані з кешу/сервера
                 const userData = await resolveUserData(m.sender);
                 displayName = userData ? userData.username : `User ${m.sender}`;
                 avatarUrl = userData ? userData.avatarUrl : null;
             }
 
-            // --- E2EE ДЕШИФРУВАННЯ ---
+            // --- E2EE ДЕШИФРУВАННЯ (тільки для DMs) ---
             let contentToShow = m.content;
 
             if (viewMode === 'dm' && contentToShow && contentToShow.startsWith('{')) {
+                // Перевіряємо, чи є в нас приватний ключ для розшифровки
                 if (typeof myPrivateKey !== 'undefined' && myPrivateKey) {
                     try {
                         const decrypted = await CryptoManager.decryptMessage(m.content, myPrivateKey, isMe);
@@ -1764,17 +1860,19 @@
             if (avatarUrl) {
                 avatarHtml = `<div class="nav-item-avatar" style="min-width:40px; height:40px; border-radius:50%; background-image: url('${avatarUrl}'); background-size: cover; background-position: center; margin-right:15px;"></div>`;
             } else {
-                avatarHtml = `<div class="nav-item-avatar" style="min-width:40px; height:40px; border-radius:50%; background:${isMe?'#faa61a':'#5865f2'}; display:flex; align-items:center; justify-content:center; margin-right:15px; color:white; font-weight:bold;">${displayName.substring(0,2).toUpperCase()}</div>`;
+                const bgColor = isMe ? '#faa61a' : '#5865f2';
+                avatarHtml = `<div class="nav-item-avatar" style="min-width:40px; height:40px; border-radius:50%; background:${bgColor}; display:flex; align-items:center; justify-content:center; margin-right:15px; color:white; font-weight:bold;">${displayName.substring(0,2).toUpperCase()}</div>`;
             }
 
             // МАЛЮЄМО ТІЛО ПОВІДОМЛЕННЯ
             let htmlBody = "";
 
-            // Якщо це наш HTML з помилкою - вставляємо як є, інакше текст
+            // Захист від XSS та збереження форматування
             if (contentToShow.includes("<span")) {
+                // Якщо це HTML з помилкою дешифрування - вставляємо як є
                 htmlBody += `<span style="color:#dcddde;">${contentToShow}</span>`;
             } else {
-                // Захист від XSS (екранування тексту)
+                // Екрануємо звичайний текст
                 const safeText = contentToShow.replace(/</g, "&lt;").replace(/>/g, "&gt;");
                 htmlBody += `<span style="color:#dcddde; white-space:pre-wrap;">${safeText}</span>`;
             }
@@ -1784,14 +1882,15 @@
                 htmlBody += `<span class="edited-tag">(edited)</span>`;
             }
 
-            // Вкладення
+            // Вкладення (Фото, Аудіо)
             if (m.attachments && m.attachments.length > 0) {
                 htmlBody += `<div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:5px;">`;
                 m.attachments.forEach(att => {
                     if (att.type === 'IMAGE') {
+                        // Твій друг зробив шикарну галерею, використовуємо thumbnailUrl
                         htmlBody += `<a href="${att.url}" target="_blank"><img src="${att.thumbnailUrl || att.url}" style="max-width:300px; max-height:300px; border-radius:8px; object-fit:cover;"></a>`;
                     } else if (att.type === 'VOICE') {
-                        htmlBody += `<audio controls src="${att.url}"></audio>`;
+                        htmlBody += `<audio controls src="${att.url}" style="height:35px;"></audio>`;
                     } else {
                         htmlBody += `<a href="${att.url}" target="_blank" style="color:#00aff4;">File</a>`;
                     }
@@ -1799,31 +1898,69 @@
                 htmlBody += `</div>`;
             }
 
+            // 🔥 МАЛЮЄМО РЕАКЦІЇ (Нова логіка)
+            let reactionsHtml = "";
+            let rMap = {};
+            // Обробляємо різні формати збереження (JSON рядок від сервера vs Об'єкт з БД)
+            if (typeof m.reactions === 'string') {
+                try { rMap = JSON.parse(m.reactions || "{}"); } catch(e){ rMap = {}; }
+            } else if (typeof m.reactions === 'object' && m.reactions !== null) {
+                rMap = m.reactions;
+            }
+
+            if (Object.keys(rMap).length > 0) {
+                reactionsHtml += `<div class="reactions-bar">`;
+                for (const [emoji, users] of Object.entries(rMap)) {
+                    const hasMe = users.includes(myIdStr);
+                    const pillClass = hasMe ? "reaction-pill reacted" : "reaction-pill";
+                    // Клік по плашці toggle'ить емодзі
+                    reactionsHtml += `<div class="${pillClass}" onclick="sendReactionAction('${m.id}', '${emoji}')">
+                        ${emoji} <span style="font-weight:bold; margin-left:2px;">${users.length}</span>
+                    </div>`;
+                }
+                reactionsHtml += `</div>`;
+            }
+
             // ЧАС ПОВІДОМЛЕННЯ
             let msgTime = m.timestamp;
             if (typeof msgTime === 'string' && !msgTime.endsWith('Z')) msgTime += 'Z';
-            const displayTimeString = new Date(msgTime).toLocaleTimeString();
+            const displayTimeString = new Date(msgTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
 
-            // ДОДАЄМО КНОПКИ ДІЙ ТІЛЬКИ ДЛЯ СВОЇХ ПОВІДОМЛЕНЬ
-            let actionsHtml = "";
-            if (isMe) {
-                const escapedText = contentToShow.replace(/'/g, "&apos;").replace(/"/g, "&quot;");
-                actionsHtml = `
-                <div class="msg-actions">
-                    <button class="msg-action-btn" title="Edit" onclick="initEditMessage('${m.id}', '${escapedText}')"><i class="fas fa-pen"></i></button>
-                    <button class="msg-action-btn delete-btn" title="Delete" onclick="sendDeleteAction('${m.id}')"><i class="fas fa-trash"></i></button>
+            // 🔥 ДОДАЄМО КНОПКИ ДІЙ (Зі смайликом!)
+            let actionsHtml = `<div class="msg-actions">`;
+
+            // 1. Emoji Picker (Доступний для ВСІХ повідомлень)
+            actionsHtml += `
+                <div class="emoji-picker-container">
+                    <button class="msg-action-btn" title="Add Reaction"><i class="fas fa-smile"></i></button>
+                    <div class="emoji-picker-menu">
+                        <button class="emoji-btn" onclick="sendReactionAction('${m.id}', '👍')">👍</button>
+                        <button class="emoji-btn" onclick="sendReactionAction('${m.id}', '❤️')">❤️</button>
+                        <button class="emoji-btn" onclick="sendReactionAction('${m.id}', '😂')">😂</button>
+                        <button class="emoji-btn" onclick="sendReactionAction('${m.id}', '😢')">😢</button>
+                    </div>
                 </div>`;
+
+            // 2. Редагування/видалення тільки для власних повідомлень
+            if (isMe) {
+                // Екрануємо одинарні дужки для JS
+                const escapedForJs = contentToShow.replace(/'/g, "\\'");
+                actionsHtml += `
+                    <button class="msg-action-btn" title="Edit" onclick="initEditMessage('${m.id}', '${escapedForJs}')"><i class="fas fa-pen"></i></button>
+                    <button class="msg-action-btn delete-btn" title="Delete" onclick="sendDeleteAction('${m.id}')"><i class="fas fa-trash"></i></button>
+                `;
             }
+            actionsHtml += `</div>`;
 
             // ФІНАЛЬНИЙ HTML ЗБІРКА РЯДКА
             div.innerHTML = `
             ${avatarHtml}
             <div style="flex: 1; min-width: 0;">
                 <div style="color:white; font-weight:bold; font-size:15px; margin-bottom:5px;">
-                    ${displayName} <span style="font-size:12px; color:#72767d; margin-left:5px;">${displayTimeString}</span>
+                    ${displayName} <span style="font-size:12px; color:#72767d; margin-left:8px;">${displayTimeString}</span>
                 </div>
                 <div>${htmlBody}</div>
-            </div>
+                ${reactionsHtml} </div>
             ${actionsHtml}`;
 
             container.appendChild(div);
