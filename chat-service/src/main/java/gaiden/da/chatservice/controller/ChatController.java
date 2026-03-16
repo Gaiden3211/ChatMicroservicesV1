@@ -1,12 +1,7 @@
 package gaiden.da.chatservice.controller;
 
-
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import gaiden.da.chatservice.config.RedisConfig;
-import gaiden.da.chatservice.dto.AttachmentDto;
 import gaiden.da.chatservice.dto.ChatMessageDto;
-import gaiden.da.chatservice.dto.MessageActionDto;
 import gaiden.da.chatservice.dto.PushNotificationEvent;
 import gaiden.da.chatservice.entity.ChatMessage;
 import gaiden.da.chatservice.repository.ChatRepository;
@@ -19,24 +14,18 @@ import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.ResponseEntity;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.ResponseBody;
-import org.springframework.kafka.core.KafkaTemplate;
-
 
 import java.security.Principal;
 import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Controller
@@ -51,8 +40,6 @@ public class ChatController {
     private final ContactService contactService;
     private final ChatRepository chatRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @MessageMapping("/chat/{guildId}/{channelId}/sendMessage")
     public void sendMessage(
@@ -88,28 +75,18 @@ public class ChatController {
         chatMessage.setTimestamp(LocalDateTime.now());
         chatMessage.setRecipientId(null);
 
-        //СЕРІАЛІЗАЦІЯ: List -> JSON String
-        String attachmentsJson = null;
-        try {
-            if (chatMessage.getAttachments() != null && !chatMessage.getAttachments().isEmpty()) {
-                attachmentsJson = objectMapper.writeValueAsString(chatMessage.getAttachments());
-            }
-        } catch (Exception e) {
-            log.error("Failed to serialize attachments", e);
-        }
-
-
+        // 🔥 Магія Mongo: ми кладемо списки та об'єкти прямо в сутність, ніякої серіалізації!
         ChatMessage savedMsg = chatRepository.save(ChatMessage.builder()
                 .content(chatMessage.getContent())
                 .sender(chatMessage.getSender())
                 .guildId(guildId)
                 .channelId(channelId)
                 .timestamp(chatMessage.getTimestamp())
-                .attachments(attachmentsJson)
+                .attachments(chatMessage.getAttachments() != null ? chatMessage.getAttachments() : new ArrayList<>())
+                .reactions(new HashMap<>())
                 .build());
 
         chatMessage.setId(savedMsg.getId());
-
 
         String destination = String.format("/topic/guild/%s/channel/%s", guildId, channelId);
         log.info("📤 Publishing to Redis topic: {}", RedisConfig.CHAT_TOPIC);
@@ -134,21 +111,9 @@ public class ChatController {
             dto.setChannelId(msg.getChannelId());
             dto.setTimestamp(msg.getTimestamp());
 
-
-            if (msg.getAttachments() != null && !msg.getAttachments().isEmpty()) {
-                try {
-                    List<AttachmentDto> attachments = objectMapper.readValue(
-                            msg.getAttachments(),
-                            new TypeReference<List<AttachmentDto>>() {}
-                    );
-                    dto.setAttachments(attachments);
-                } catch (Exception e) {
-                    log.error("Failed to deserialize attachments for msg {}", msg.getId(), e);
-                    dto.setAttachments(java.util.Collections.emptyList());
-                }
-            } else {
-                dto.setAttachments(java.util.Collections.emptyList());
-            }
+            // 🔥 MongoDB сама все розпарсила! Просто передаємо об'єкти в DTO
+            dto.setAttachments(msg.getAttachments() != null ? msg.getAttachments() : new ArrayList<>());
+            dto.setReactions(msg.getReactions() != null ? msg.getReactions() : new HashMap<>());
 
             return dto;
         }).collect(Collectors.toList());
@@ -166,9 +131,7 @@ public class ChatController {
 
         log.info("📩 Private message from User {} to User {} Content: {}", senderId, recipientId, chatMessage.getContent());
 
-
         contactService.ensureContactExists(senderId, recipientId);
-
 
         String title = "Нове повідомлення від юзера " + chatMessage.getSender();
         String body = "У вас нове повідомлення у приватному чаті!";
@@ -176,15 +139,11 @@ public class ChatController {
         chatMessage.setSender(senderId);
         chatMessage.setTimestamp(LocalDateTime.now());
 
-
-
         redisTemplate.convertAndSend(RedisConfig.CHAT_TOPIC, chatMessage);
         PushNotificationEvent pushEvent = new PushNotificationEvent(chatMessage.getRecipientId(), title, body);
 
         kafkaTemplate.send("push-alerts", pushEvent);
     }
-
-
 
     @MessageMapping("/chat/{guildId}/{channelId}/action")
     public void handleGuildMessageAction(
@@ -198,53 +157,57 @@ public class ChatController {
         actionDto.setGuildId(guildId);
         actionDto.setChannelId(channelId);
 
-        Long msgId = Long.parseLong(String.valueOf(actionDto.getId()));
+        // 🔥 В MongoDB ID це String, тому Long.parseLong більше не потрібен!
+        String msgId = actionDto.getId();
 
         chatRepository.findById(msgId).ifPresent(msg -> {
-            if (!msg.getSender().equals(userIdStr)) {
-                log.warn("User {} tried to modify someone else's message {}", userIdStr, msgId);
-                return;
-            }
 
             if ("EDIT".equals(actionDto.getAction())) {
+                if (!msg.getSender().equals(userIdStr)) {
+                    log.warn("User {} tried to edit someone else's message {}", userIdStr, msgId);
+                    return;
+                }
                 msg.setContent(actionDto.getContent());
                 chatRepository.save(msg);
+
             } else if ("DELETE".equals(actionDto.getAction())) {
+                if (!msg.getSender().equals(userIdStr)) {
+                    log.warn("User {} tried to delete someone else's message {}", userIdStr, msgId);
+                    return;
+                }
                 chatRepository.delete(msg);
-            } else  if ("REACT".equals(actionDto.getAction())) {
+
+            } else if ("REACT".equals(actionDto.getAction())) {
+                // Смайлики можуть ставити ВСІ, тому перевірки на автора тут немає
                 String emoji = actionDto.getContent();
-                String currentReactions = msg.getReactions();
-                if (currentReactions == null || currentReactions.isEmpty()) {
-                    currentReactions = "{}";
+
+                // Беремо мапу реакцій прямо з об'єкта (без ObjectMapper!)
+                Map<String, Set<String>> reactionMap = msg.getReactions();
+                if (reactionMap == null) {
+                    reactionMap = new HashMap<>();
                 }
 
-                try {
-                    Map<String, Set<String>> reactionMap = objectMapper.readValue(currentReactions, new TypeReference<Map<String, Set<String>>>() {});
+                Set<String> users = reactionMap.computeIfAbsent(emoji, k -> new HashSet<>());
 
-                    Set<String> users = reactionMap.computeIfAbsent(emoji, k -> new HashSet<>());
-
-                    if (users.contains(userIdStr)) {
-                        users.remove(userIdStr);
-                        if (!users.isEmpty()) reactionMap.remove(emoji);
-                    } else {
-                        users.add(userIdStr);
+                // Toggle логіка (якщо є - видаляємо, якщо немає - додаємо)
+                if (users.contains(userIdStr)) {
+                    users.remove(userIdStr);
+                    if (users.isEmpty()) {
+                        reactionMap.remove(emoji);
                     }
-
-                    msg.setReactions(objectMapper.writeValueAsString(reactionMap));
-                    chatRepository.save(msg);
-
-                    actionDto.setReactions(msg.getReactions());
-                } catch (Exception e) {
-                    log.error("Failed to deserialize reactions for msg {}", msg.getId(), e);
+                } else {
+                    users.add(userIdStr);
                 }
 
+                msg.setReactions(reactionMap);
+                chatRepository.save(msg);
+
+                // Оновлюємо DTO, щоб розіслати правильний стан усім
+                actionDto.setReactions(reactionMap);
             }
 
-
-            String destination = String.format("/topic/guild/%s/channel/%s/actions", guildId, channelId);
+            // Розсилаємо оновлення всім у кімнаті
             redisTemplate.convertAndSend(RedisConfig.CHAT_TOPIC, actionDto);
-
-
         });
     }
 
@@ -258,8 +221,6 @@ public class ChatController {
 
         log.info("📩 Private action {} from User {} to User {}", actionDto.getAction(), senderId, actionDto.getRecipientId());
 
-       redisTemplate.convertAndSend(RedisConfig.CHAT_TOPIC, actionDto);
+        redisTemplate.convertAndSend(RedisConfig.CHAT_TOPIC, actionDto);
     }
-
-
 }

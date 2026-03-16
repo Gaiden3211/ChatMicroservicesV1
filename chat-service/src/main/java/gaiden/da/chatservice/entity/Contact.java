@@ -1,17 +1,16 @@
 package gaiden.da.chatservice.entity;
 
-import jakarta.persistence.*;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "contacts", uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"owner_id", "peer_id"})
-})
+@Document(collection = "contacts")
 @Data
 @Builder
 @NoArgsConstructor
@@ -19,15 +18,14 @@ import java.time.LocalDateTime;
 public class Contact {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private String id;
 
-    @Column(name = "owner_id", nullable = false)
+
     private String ownerId;
 
-    @Column(name = "peer_id", nullable = false)
+
     private String peerId;
 
-    @Column(name = "last_interaction")
+
     private LocalDateTime lastInteraction;
 }

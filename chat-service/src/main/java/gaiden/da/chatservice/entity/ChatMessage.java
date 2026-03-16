@@ -1,28 +1,31 @@
 package gaiden.da.chatservice.entity;
 
 import gaiden.da.chatservice.dto.AttachmentDto;
-import jakarta.persistence.*;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-@Entity
-@Table(name = "messages")
+@Document(collection = "messages")
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class ChatMessage {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
 
-    @Column(columnDefinition = "TEXT")
+    @Id
+    private String id;
+
+
     private String content;
 
     private String sender;
@@ -37,9 +40,6 @@ public class ChatMessage {
 
 
 
-     @Column(columnDefinition = "TEXT")
-     private String attachments;
-
-    @Column(columnDefinition = "TEXT")
-    private String reactions;
+    private List<AttachmentDto> attachments;
+    private Map<String, Set<String>> reactions;
 }

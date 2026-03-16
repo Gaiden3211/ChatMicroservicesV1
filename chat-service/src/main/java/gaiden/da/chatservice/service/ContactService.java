@@ -18,7 +18,7 @@ public class ContactService {
     private final ContactRepository contactRepository;
 
 
-    @Transactional
+//    @Transactional
     public void ensureContactExists(String senderId, String recipientId) {
         updateOrSave(senderId, recipientId);
         updateOrSave(recipientId, senderId);
@@ -49,6 +49,9 @@ public class ContactService {
     }
 
     public List<String> getContactIdsForUser(String userId) {
-        return contactRepository.findContactIdsByUserId(userId);
+        return contactRepository.findByOwnerId(userId)
+                .stream()
+                .map(Contact::getPeerId)
+                .toList();
     }
 }

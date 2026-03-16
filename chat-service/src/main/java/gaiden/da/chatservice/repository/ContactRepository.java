@@ -2,13 +2,13 @@ package gaiden.da.chatservice.repository;
 
 import gaiden.da.chatservice.entity.Contact;
 import io.lettuce.core.dynamic.annotation.Param;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
+
+import org.springframework.data.mongodb.repository.MongoRepository;
 
 import java.util.List;
 import java.util.Optional;
 
-public interface ContactRepository extends JpaRepository<Contact, Long> {
+public interface ContactRepository extends MongoRepository<Contact, Long> {
 
 
     List<Contact> findAllByOwnerIdOrderByLastInteractionDesc(String ownerId);
@@ -18,6 +18,5 @@ public interface ContactRepository extends JpaRepository<Contact, Long> {
 
     Optional<Contact> findByOwnerIdAndPeerId(String ownerId, String peerId);
 
-    @Query("SELECT c.peerId FROM Contact c WHERE c.ownerId = :userId")
-    List<String> findContactIdsByUserId(@Param("userId") String userId);
+    List<Contact> findByOwnerId(String ownerId);
 }
