@@ -35,6 +35,8 @@ jobs:
             docker compose up -d --build zookeeper kafka
             echo "Waiting for Kafka to be ready..."
             sleep 5
+            docker compose up -d --build discord-mongodb
+            sleep 5
             docker compose up -d --build user-service
             sleep 5
             docker compose up -d --build notification-service
