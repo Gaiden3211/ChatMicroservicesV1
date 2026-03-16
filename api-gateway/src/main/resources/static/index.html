@@ -2378,6 +2378,7 @@
                     sender: msg.sender,
                     content: msg.content,
                     attachments: msg.attachments || [],
+                    reactions: msg.reactions || {},
                     timestamp: msg.timestamp
                 }));
 
@@ -2450,6 +2451,7 @@
             sender: msg.sender,
             content: msg.content,
             attachments: msg.attachments,
+            reactions: msg.reactions || {},
             timestamp: fixedTimestamp
         };
 
