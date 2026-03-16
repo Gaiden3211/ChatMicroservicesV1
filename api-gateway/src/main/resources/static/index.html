@@ -1706,6 +1706,7 @@
         await processMessageActionLocally(actionDto);
     }
 
+    // Універсальна обробка дій (бронебійна версія)
     async function processMessageActionLocally(actionDto) {
         let key = "";
         if (actionDto.recipientId) {
@@ -1715,36 +1716,37 @@
             key = `guild-${actionDto.guildId}-chan-${actionDto.channelId}`;
         }
 
-        let history = chatHistory[key];
-
-        // 1. Оновлюємо IndexedDB
-        const db = await StorageManager.getDB();
-        const tx = db.transaction("messages", "readwrite");
-        const store = tx.objectStore("messages");
-
-        const modifyMsg = (msg) => {
-            if (actionDto.action === "DELETE") {
-                return null; // Означає видалити
-            } else if (actionDto.action === "EDIT") {
+        // Хелпер для застосування змін
+        const applyModification = (msg) => {
+            if (actionDto.action === "DELETE") return null;
+            if (actionDto.action === "EDIT") {
                 msg.content = actionDto.content;
                 msg.isEdited = true;
-            } else if (actionDto.action === "REACT") {
-                // Якщо сервер прислав вже готову JSON стрічку (Гільдії)
-                if (actionDto.reactions) {
+            }
+            if (actionDto.action === "REACT") {
+                // Якщо бекенд прислав готовий об'єкт (Гільдії)
+                if (actionDto.reactions && typeof actionDto.reactions === 'object') {
                     msg.reactions = actionDto.reactions;
                 } else {
-                    // Якщо ми самі рахуємо локально (DMs)
-                    let rMap = typeof msg.reactions === 'string' ? JSON.parse(msg.reactions || "{}") : (msg.reactions || {});
-                    let users = rMap[actionDto.content] || [];
-                    const sender = String(actionDto.sender);
+                    // Локальний підрахунок (для DMs)
+                    let rMap = {};
+                    if (typeof msg.reactions === 'string') {
+                        try { rMap = JSON.parse(msg.reactions || "{}"); } catch(e){}
+                    } else if (msg.reactions && typeof msg.reactions === 'object') {
+                        rMap = msg.reactions;
+                    }
 
-                    if (users.includes(sender)) {
-                        users = users.filter(u => u !== sender); // Видаляємо свій лайк
-                        if (users.length === 0) delete rMap[actionDto.content];
-                        else rMap[actionDto.content] = users;
+                    const emoji = actionDto.content;
+                    const senderId = String(actionDto.sender);
+                    let users = rMap[emoji] || [];
+
+                    if (users.includes(senderId)) {
+                        users = users.filter(u => u !== senderId);
+                        if (users.length === 0) delete rMap[emoji];
+                        else rMap[emoji] = users;
                     } else {
-                        users.push(sender); // Додаємо свій лайк
-                        rMap[actionDto.content] = users;
+                        users.push(senderId);
+                        rMap[emoji] = users;
                     }
                     msg.reactions = rMap;
                 }
@@ -1752,43 +1754,52 @@
             return msg;
         };
 
-        // Читаємо і записуємо в БД
-        let reqStr = store.get(String(actionDto.id));
-        reqStr.onsuccess = () => {
-            let msg = reqStr.result || null;
-            if (!msg) {
-                // Фолбек для старих числових ID
-                let reqNum = store.get(Number(actionDto.id));
-                reqNum.onsuccess = () => {
-                    if (reqNum.result) processAndSave(reqNum.result);
-                };
-            } else {
-                processAndSave(msg);
-            }
-
-            function processAndSave(m) {
-                const updated = modifyMsg(m);
-                if (updated === null) store.delete(m.id);
-                else store.put(updated);
-            }
-        };
-
-        // 2. Оновлюємо оперативну пам'ять
+        // 🔥 1. ОНОВЛЮЄМО RAM ТА ЕКРАН (Робимо це першим, щоб UI не зависав!)
+        let history = chatHistory[key];
         if (history) {
             if (actionDto.action === "DELETE") {
                 chatHistory[key] = history.filter(m => String(m.id) !== String(actionDto.id));
             } else {
-                const msg = history.find(m => String(m.id) === String(actionDto.id));
-                if (msg) {
-                    modifyMsg(msg); // Оновлюємо об'єкт у пам'яті за посиланням
-                }
+                const msgInRam = history.find(m => String(m.id) === String(actionDto.id));
+                if (msgInRam) applyModification(msgInRam);
             }
 
-            // Перемальовуємо
+            // Перемальовуємо UI
             if ((viewMode === 'dm' && key === `dm-${currentDmUserId}`) ||
                 (viewMode === 'guild' && key === `guild-${currentGuild?.id}-chan-${currentChannel?.id}`)) {
                 renderMessages(key);
             }
+        }
+
+        // 🔥 2. ОНОВЛЮЄМО БАЗУ (У фоні, з перевіркою на NaN)
+        try {
+            const db = await StorageManager.getDB();
+            const tx = db.transaction("messages", "readwrite");
+            const store = tx.objectStore("messages");
+
+            const reqStr = store.get(String(actionDto.id));
+            reqStr.onsuccess = () => {
+                if (reqStr.result) {
+                    processAndSave(reqStr.result);
+                } else {
+                    // Тільки якщо ID - це число (старі повідомлення), робимо фолбек
+                    const numId = Number(actionDto.id);
+                    if (!isNaN(numId)) {
+                        const reqNum = store.get(numId);
+                        reqNum.onsuccess = () => {
+                            if (reqNum.result) processAndSave(reqNum.result);
+                        };
+                    }
+                }
+
+                function processAndSave(m) {
+                    const updated = applyModification(m);
+                    if (updated === null) store.delete(m.id);
+                    else store.put(updated);
+                }
+            };
+        } catch (e) {
+            console.warn("IndexedDB update skipped/failed:", e);
         }
     }
     // --- НОВА ФУНКЦІЯ ВІДОБРАЖЕННЯ ---
