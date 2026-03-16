@@ -119,6 +119,18 @@ services:
 #          memory: 100M
 
   # === MICROSERVICES ===
+  mongodb:
+    image: mongo:latest
+    container_name: discord-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - discord-network
 
   api-gateway:
     build:
@@ -403,7 +415,8 @@ services:
     networks:
       - app-network
 
-#volumes:
+volumes:
+  mongo_data:
 #  user-db-data:
 #  auth-db-data:
 #  guild-db-data:
