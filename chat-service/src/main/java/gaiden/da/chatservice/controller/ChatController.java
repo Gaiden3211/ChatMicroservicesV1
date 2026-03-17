@@ -223,4 +223,33 @@ public class ChatController {
 
         redisTemplate.convertAndSend(RedisConfig.CHAT_TOPIC, actionDto);
     }
+
+
+    @MessageMapping("/chat/{guildId}/{channelId}/typing")
+    public void handleTyping(
+            @DestinationVariable String guildId,
+            @DestinationVariable String channelId,
+            Principal principal
+    ){
+        ChatMessageDto typingDto = new ChatMessageDto();
+        typingDto.setSender(principal.getName());
+        typingDto.setGuildId(guildId);
+        typingDto.setChannelId(channelId);
+        typingDto.setAction("TYPING");
+
+
+        redisTemplate.convertAndSend(RedisConfig.CHAT_TOPIC, typingDto);
+    }
+
+    @MessageMapping("/private/typing")
+    public void handlePrivateTyping(
+            @Payload ChatMessageDto typingDto,
+            Principal principal
+    ){
+        typingDto.setSender(principal.getName());
+        typingDto.setAction("TYPING");
+
+        redisTemplate.convertAndSend(RedisConfig.CHAT_TOPIC, typingDto);
+    }
+
 }

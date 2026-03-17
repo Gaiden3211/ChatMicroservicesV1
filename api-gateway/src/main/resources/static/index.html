@@ -510,7 +510,9 @@
             </button>
         </div>
         <div class="messages-container" id="messagesContainer"></div>
-        <div class="input-area" style="position: relative;"> <div id="attachmentPreview" class="attachment-preview"></div>
+        <div class="input-area" style="position: relative;">
+            <div id="attachmentPreview" class="attachment-preview"></div>
+            <div id="typingIndicator" style="height: 18px; font-size: 13px; color: #b9bbbe; padding: 0 20px; font-style: italic; margin-bottom: 5px;"></div>
 
             <div id="aiMenu" class="ai-menu hidden">
                 <div class="ai-menu-header">AI Assistant 🪄</div>
@@ -549,7 +551,7 @@
                     <i class="fas fa-magic" style="color: #faa61a;"></i>
                 </button>
 
-                <input type="text" id="messageInput" placeholder="Message..." disabled onkeypress="handleEnter(event)">
+                <input type="text" id="messageInput" placeholder="Message..." disabled onkeypress="handleEnter(event)" oninput="handleTyping()">
 
                 <button id="recordBtn" class="attach-btn" onclick="toggleRecording()" title="Click to Record">
                     <i class="fas fa-microphone"></i>
@@ -644,6 +646,43 @@
     </div>
 </div>
 <script>
+
+
+
+
+    // --- TYPING INDICATOR LOGIC ---
+    let lastTypingTime = 0;
+    let hideTypingTimer = null;
+
+    // Відправляємо сигнал "Я друкую" (раз на 3 секунди)
+    function handleTyping() {
+        if (!currentDmUserId && (!currentGuild || !currentChannel)) return;
+
+        const now = Date.now();
+        if (now - lastTypingTime < 3000) return; // Тротлінг (захист від спаму)
+        lastTypingTime = now;
+
+        if (viewMode === 'dm') {
+            stompClient.send("/app/private/typing", {}, JSON.stringify({ recipientId: currentDmUserId }));
+        } else {
+            stompClient.send(`/app/chat/${currentGuild.id}/${currentChannel.id}/typing`, {}, JSON.stringify({}));
+        }
+    }
+
+    // Показуємо індикатор на екрані, коли хтось інший друкує
+    async function showTypingIndicator(senderId) {
+        const indicator = document.getElementById('typingIndicator');
+        const userData = await resolveUserData(senderId);
+        const name = userData ? userData.username : `User ${senderId}`;
+
+        indicator.innerText = `${name} is typing...`;
+
+        // Ховаємо через 3.5 секунди (якщо нових сигналів не буде)
+        clearTimeout(hideTypingTimer);
+        hideTypingTimer = setTimeout(() => {
+            indicator.innerText = "";
+        }, 3500);
+    }
 
     const VAPID_PUBLIC_KEY = "BAt0Yv_lmLmO723wlUop8HbNakGnUDOjrxHlJhUi5rZgiEdYEnrXEB9cu-mnpCeuobBfRGGBrcwPWVeowH2ZjVs";
 
@@ -2400,6 +2439,20 @@
     function handleIncomingMessage(msg, type) {
         console.log("📨 [WS INCOMING]", msg);
 
+        if (msg.action === "TYPING") {
+            const incomingSender = String(msg.sender);
+            if (incomingSender === String(myUserId)) return; // Ігноруємо своє власне друкування
+
+            // Перевіряємо, чи ми зараз в тому чаті, де хтось друкує
+            let isForCurrentChat = false;
+            if (type === 'dm' && viewMode === 'dm' && currentDmUserId == incomingSender) isForCurrentChat = true;
+            if (type === 'guild' && viewMode === 'guild' && currentGuild?.id == msg.guildId && currentChannel?.id == msg.channelId) isForCurrentChat = true;
+
+            if (isForCurrentChat) {
+                showTypingIndicator(incomingSender);
+            }
+            return; // 🔥 Виходимо, щоб ця подія НЕ збереглася в історію!
+        }
         // Якщо це дія над існуючим повідомленням (редагування/видалення)
         if (msg.action) {
             processMessageActionLocally(msg);
