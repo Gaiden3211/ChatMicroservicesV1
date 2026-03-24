@@ -29,7 +29,6 @@ public class UserDetailsServiceImplGrpc implements UserDetailsService {
                     .setUsername(username)
                     .build();
 
-
             UserCredentialDto credentials = userStub.getUserCredentialsByUsername(request);
 
             if (credentials == null) {
