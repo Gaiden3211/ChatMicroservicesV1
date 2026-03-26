@@ -9,10 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequiredArgsConstructor
@@ -21,6 +18,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthControllerGrpc {
 
     private final AuthServiceGrpc authService;
+
+    @GetMapping("/test-io")
+    public String testIo() throws InterruptedException {
+        Thread.sleep(200);
+        return "Done";
+    }
 
     @PostMapping("register")
     @Operation(summary = "Register")
