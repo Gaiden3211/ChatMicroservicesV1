@@ -118,7 +118,7 @@ logging:
   file:
     name: /logs/gateway.log
   level:
-    root: INFO
+    root: WARN
     org.springframework.cloud.gateway: DEBUG
     org.springframework.cloud.gateway.handler.RoutePredicateHandlerMapping: DEBUG
     org.springframework.web.reactive.socket: DEBUG

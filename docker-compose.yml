@@ -141,6 +141,7 @@ services:
       - "8443:8443"
     environment:
       - GUILD_SERVICE_URL=http://guild-service:8083
+      - REACTOR_NETTY_IO_WORKER_COUNT=16
       # Використовуємо змінну з .env
       - APPLICATION_SECURITY_JWT_SECRET_KEY=${JWT_SECRET}
       - SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=20
