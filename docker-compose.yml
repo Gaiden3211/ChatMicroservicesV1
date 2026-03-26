@@ -213,6 +213,8 @@ services:
       context: .
       dockerfile: auth-service/Dockerfile
     container_name: auth-service
+    ports:
+      - "8082:8082"
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://ep-still-smoke-aio1pgkq-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require
       - SPRING_DATASOURCE_USERNAME=neondb_owner
